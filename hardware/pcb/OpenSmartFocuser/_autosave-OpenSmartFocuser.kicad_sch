@@ -3036,7 +3036,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Unexpected Maker:NanoS3"
+		(property "Footprint" "OpenSmartFocuser:NanoS3"
 			(at 57.15 85.09 0)
 			(effects
 				(font

@@ -1,0 +1,5 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "OpenSmartFocuser")(type "KiCad")(uri "Z:/Projects/OpenSmartFocuser/hardware/pcb/OpenSmartFocuser")(options "")(descr ""))
+  (lib (name "EasyEDA_Lib")(type "EasyEDA / JLCEDA Pro")(uri "${KIPRJMOD}/EasyEDA_Lib/EasyEDA_Lib.elibz")(options "")(descr ""))
+)
