@@ -2,7 +2,8 @@
 
 #include <Arduino.h>
 #include <math.h>
-#include "stars.h"
+#include "config.h"
+#include IDLE_STAR_CATALOG_HEADER
 
 namespace {
 

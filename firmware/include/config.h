@@ -36,6 +36,12 @@
 #define IDLE_STAR_MAP_CENTER_DEC_DEG 20.0f
 
 /*
+ * Select which star catalog is compiled into the idle sky map.
+ * Options in this repo: "stars.h", "stars_large.h", "stars_6.5.h"
+ */
+#define IDLE_STAR_CATALOG_HEADER "stars_6.5.h"
+
+/*
  * Astrophotography UI theme (RGB565): red-dominant to preserve dark adaptation.
  * Tune these values to restyle the full menu system from one place.
  */
