@@ -21,6 +21,7 @@
 #define TFT_CS   PIN_LCD_CS
 #define TFT_DC   PIN_LCD_DC
 #define TFT_RST  PIN_LCD_RST
+#define TOUCH_CS -1
 
 /*
  * Font set selection to balance features and flash usage.

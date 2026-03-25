@@ -4,6 +4,7 @@
 #include <OpenMenuOS.h>
 #include "config.h"
 #include "custom_screens.h"
+#include "lx200_serial.h"
 
 /*
  * Hardware interface constants for TMC2209 UART control.
@@ -227,5 +228,6 @@ void setup() {
 void loop() {
   menu.loop();
   updateHoming();
+  handleSerialLx200();
   analogWrite(PIN_LCD_BL, settingsScreen.getSettingValue("Brightness") * 255 / 100);
 }

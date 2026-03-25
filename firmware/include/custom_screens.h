@@ -3,6 +3,7 @@
 #include <OpenMenuOS.h>
 #include <AccelStepper.h>
 #include "config.h"
+#include "star_map_renderer.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
 extern ScreenManager screenManager;
@@ -15,6 +16,8 @@ extern int BUTTON_UP_PIN;
 extern int BUTTON_DOWN_PIN;
 extern int BUTTON_SELECT_PIN;
 extern int prevSelectState;
+extern float idleMapCenterRaDeg;
+extern float idleMapCenterDecDeg;
 
 /*
  * Custom OpenMenuOS screens used as extension points for the focuser UI.
@@ -37,14 +40,19 @@ class IdleScreen : public Screen {
     static constexpr int kBottomBarHeight = 20;
     static constexpr int kRightBarWidth = 14;
     static constexpr int kTextPaddingX = 4;
+    static constexpr float kMapFovDeg = 60.0f;
 
     int screenWidth = canvas.width();
     int screenHeight = canvas.height();
     int bottomBarY = screenHeight - kBottomBarHeight;
     int rightBarX = screenWidth - kRightBarWidth;
+    int mapWidth = rightBarX;
+    int mapHeight = bottomBarY;
 
     // Clear the full screen first so non-bar regions stay blank.
     canvas.fillScreen(IDLE_COLOR_BG);
+
+    drawStarMap(0, 0, mapWidth, mapHeight, kMapFovDeg);
 
     // Bottom status bar must span the full width, including the right edge.
     canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
@@ -149,6 +157,39 @@ class IdleScreen : public Screen {
   }
 
  private:
+  static void drawProjectedStar(const StarMapRenderer::StarPoint& point, void* userData) {
+    (void)userData;
+    if (point.radius > 0) {
+      canvas.fillCircle(point.x, point.y, point.radius, point.color);
+    } else {
+      canvas.drawPixel(point.x, point.y, point.color);
+    }
+  }
+
+  void drawStarMap(int x, int y, int width, int height, float fovDeg) {
+    if (width <= 2 || height <= 2) {
+      return;
+    }
+
+    // Draw a subtle border around the map viewport.
+    canvas.drawRect(x, y, width, height, IDLE_COLOR_SPACER);
+
+    StarMapRenderer::Viewport viewport = {x, y, width, height};
+    StarMapRenderer::forEachProjectedStar(
+        viewport,
+        fovDeg,
+        idleMapCenterRaDeg,
+        idleMapCenterDecDeg,
+        &IdleScreen::drawProjectedStar,
+        this);
+
+    // Center marker for configured pointing target.
+    const int cx = StarMapRenderer::centerX(viewport);
+    const int cy = StarMapRenderer::centerY(viewport);
+    canvas.drawFastHLine(cx - 3, cy, 7, IDLE_COLOR_TEXT);
+    canvas.drawFastVLine(cx, cy - 3, 7, IDLE_COLOR_TEXT);
+  }
+
   void onSelectShortPress() {
     // Same as library CustomScreen: no short-press action by default.
   }

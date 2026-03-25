@@ -29,6 +29,13 @@
 #define DEFAULT_BRIGHTNESS 75
 
 /*
+ * Idle star-map center (J2000-like sky coordinates, degrees).
+ * Right ascension wraps 0..360; declination is clamped to -90..90.
+ */
+#define IDLE_STAR_MAP_CENTER_RA_DEG 90.0f
+#define IDLE_STAR_MAP_CENTER_DEC_DEG 20.0f
+
+/*
  * Astrophotography UI theme (RGB565): red-dominant to preserve dark adaptation.
  * Tune these values to restyle the full menu system from one place.
  */
