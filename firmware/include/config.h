@@ -9,12 +9,16 @@
 
 /*
  * Generic motion and UART timing configuration for the focuser driver stack.
+ * With a 1:23 worm reduction and 2 mm leadscrew lead, 1 mm/s linear travel
+ * requires about 11.5 motor rev/s. At 200 full steps/rev and 16 microsteps,
+ * that is 36,800 driver steps/s.
  */
 #define TMC_UART_BAUDRATE 115200
 #define TMC_DRIVER_ADDRESS 0b00
-#define TMC_MAX_SPEED 1000
-#define TMC_MAX_ACCELERATION 7500
+#define TMC_MAX_SPEED 80000
+#define TMC_MAX_ACCELERATION 15000
 #define IDLE_JOG_SPEED_STEPS_PER_SEC 600
+#define HOMING_SPEED_STEPS_PER_SEC 73600
 
 /*
  * TMC2209 electrical and mode settings used during driver initialization.

@@ -4,13 +4,16 @@
 #include <OpenMenuOS.h>
 #include "config.h"
 #include "custom_screens.h"
-#include "lx200_serial.h"
 
 /*
  * Hardware interface constants for TMC2209 UART control.
  */
 static constexpr float TMC_R_SENSE = 0.11f;
 static constexpr uint8_t TMC_STEPPER_UART_INDEX = 1;
+
+// globlal variables for idle star map center coordinates
+float idleMapCenterRaDeg = IDLE_STAR_MAP_CENTER_RA_DEG;
+float idleMapCenterDecDeg = IDLE_STAR_MAP_CENTER_DEC_DEG;
 
 /*
  * Global hardware driver instances used during initialization and runtime.
@@ -41,6 +44,7 @@ CustomScreens::IdleScreen idleScreen(kTitleIdle);
 CustomScreens::PresetScreen presetScreen(kTitlePresets);
 MenuScreen PresetsMenu(kTitlePresets);
 MenuScreen Filter1("Filter 1");
+CustomScreen Homing("Homing");
 SettingsScreen TMCSettings(kTitleTmcSettings);
 SettingsScreen settingsScreen(kTitleSettings);
 
@@ -85,12 +89,15 @@ static void toggleMotorEnabledAction() {
  * Main-menu callback to trigger endstop-based homing from the Home option.
  */
 static void startHomingAction() {
+  screenManager.pushScreen(&idleScreen);
   if (!motorEnabled) {
-    return;
+    motorEnabled = true;
+    focuserStepper.enableOutputs();
   }
 
+  focuserStepper.stop();
+  focuserStepper.setSpeed(0.0f);
   homingInProgress = true;
-  screenManager.pushScreen(&idleScreen);
 }
 
 /*
@@ -122,7 +129,8 @@ static void updateHoming() {
   }
 
   focuserStepper.enableOutputs();
-  focuserStepper.setSpeed(-IDLE_JOG_SPEED_STEPS_PER_SEC);
+  focuserStepper.setMaxSpeed(HOMING_SPEED_STEPS_PER_SEC);
+  focuserStepper.setSpeed(-HOMING_SPEED_STEPS_PER_SEC);
   focuserStepper.runSpeed();
 }
 
@@ -211,14 +219,11 @@ static void initDriver() {
  * and TMC driver bring-up.
  */
 void setup() {
-  Serial.begin(115200);
   delay(100);
 
   initMenu();
 
   initDriver();
-
-  Serial.println("OpenSmartFocuser hardware init complete");
 }
 
 /*
@@ -226,8 +231,12 @@ void setup() {
  * current brightness setting to the display backlight PWM pin.
  */
 void loop() {
-  menu.loop();
   updateHoming();
-  handleSerialLx200();
+
+  if (homingInProgress) {
+    return;
+  }
+
+  menu.loop();
   analogWrite(PIN_LCD_BL, settingsScreen.getSettingValue("Brightness") * 255 / 100);
 }
