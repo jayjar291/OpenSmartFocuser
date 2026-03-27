@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <AccelStepper.h>
+#include <FastAccelStepper.h>
 #include <TMCStepper.h>
 #include <OpenMenuOS.h>
 #include "config.h"
@@ -20,7 +20,8 @@ float idleMapCenterDecDeg = IDLE_STAR_MAP_CENTER_DEC_DEG;
  * Global hardware driver instances used during initialization and runtime.
  */
 HardwareSerial tmcSerial(TMC_STEPPER_UART_INDEX);
-AccelStepper focuserStepper(AccelStepper::DRIVER, PIN_TMC_STEP, PIN_TMC_DIR);
+FastAccelStepperEngine stepperEngine;
+FastAccelStepper* focuserStepper = nullptr;
 TMC2209Stepper focuserDriver(&tmcSerial, TMC_R_SENSE, TMC_DRIVER_ADDRESS);
 OpenMenuOS menu(PIN_BUTTON_UP, PIN_BUTTON_DOWN, PIN_BUTTON_SELECT);
 
@@ -40,7 +41,8 @@ static void applyHomingMicrosteps() {
 }
 
 static void stopHoming() {
-  focuserStepper.setSpeed(0.0f);
+  focuserStepper->forceStop();
+  focuserStepper->setSpeedInHz(TMC_MAX_SPEED);
   applyNormalMicrosteps();
   homingInProgress = false;
 }
@@ -95,10 +97,10 @@ static void toggleMotorEnabledAction() {
     stopHoming();
   }
   if (motorEnabled) {
-    focuserStepper.enableOutputs();
+    focuserStepper->enableOutputs();
   } else {
-    focuserStepper.setSpeed(0.0f);
-    focuserStepper.disableOutputs();
+    focuserStepper->stopMove();
+    focuserStepper->disableOutputs();
   }
 }
 
@@ -109,12 +111,13 @@ static void startHomingAction() {
   screenManager.pushScreen(&idleScreen);
   if (!motorEnabled) {
     motorEnabled = true;
-    focuserStepper.enableOutputs();
+    focuserStepper->enableOutputs();
   }
 
-  focuserStepper.stop();
-  focuserStepper.setSpeed(0.0f);
+  focuserStepper->stopMove();
   applyHomingMicrosteps();
+  focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
+  focuserStepper->runBackward();
   homingInProgress = true;
 }
 
@@ -139,16 +142,10 @@ static void updateHoming() {
   }
 
   if (isEndstopTriggered()) {
-    focuserStepper.setCurrentPosition(0);
+    focuserStepper->forceStopAndNewPosition(0);
     stopHoming();
     return;
   }
-
-  const float homingSpeed = static_cast<float>(HOMING_SPEED_STEPS_PER_SEC);
-  focuserStepper.enableOutputs();
-  focuserStepper.setMaxSpeed(homingSpeed*2);
-  focuserStepper.setSpeed(-homingSpeed);
-  focuserStepper.runSpeed();
 }
 
 /*
@@ -175,8 +172,8 @@ static void initMenu() {
     if (!motorEnabled) {
       return;
     }
-    focuserStepper.enableOutputs();
-    focuserStepper.moveTo(savedPresetPositionSteps);
+    focuserStepper->enableOutputs();
+    focuserStepper->moveTo(savedPresetPositionSteps);
   });
   Filter1.addItem(kFilterEdit, &presetScreen);
   
@@ -222,13 +219,15 @@ static void initDriver() {
   applyNormalMicrosteps();
   focuserDriver.pwm_autoscale(true);
 
-  focuserStepper.setMaxSpeed(TMC_MAX_SPEED);
-  focuserStepper.setAcceleration(TMC_MAX_ACCELERATION);
-  focuserStepper.setEnablePin(PIN_TMC_ENABLE);
-  focuserStepper.setPinsInverted(false, false, true);
+  stepperEngine.init();
+  focuserStepper = stepperEngine.stepperConnectToPin(PIN_TMC_STEP);
+  focuserStepper->setDirectionPin(PIN_TMC_DIR);
+  focuserStepper->setEnablePin(PIN_TMC_ENABLE, true); // active LOW: LOW = motor enabled
+  focuserStepper->setSpeedInHz(TMC_MAX_SPEED);
+  focuserStepper->setAcceleration(TMC_MAX_ACCELERATION);
   motorEnabled = false;
   homingInProgress = false;
-  focuserStepper.disableOutputs();
+  focuserStepper->disableOutputs();
 }
 
 /*

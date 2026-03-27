@@ -1,14 +1,14 @@
 #pragma once
 
 #include <OpenMenuOS.h>
-#include <AccelStepper.h>
+#include <FastAccelStepper.h>
 #include "config.h"
 #include "star_map_renderer.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
 extern ScreenManager screenManager;
 extern MenuScreen mainMenu;
-extern AccelStepper focuserStepper;
+extern FastAccelStepper* focuserStepper;
 extern bool motorEnabled;
 extern long savedPresetPositionSteps;
 extern int buttonVoltage;
@@ -206,12 +206,12 @@ class IdleScreen : public Screen {
 
   void onUpButtonHeld() {
     if (!motorEnabled) {
-      focuserStepper.setSpeed(0.0f);
+      focuserStepper->stopMove();
       return;
     }
-    focuserStepper.enableOutputs();
-    focuserStepper.setSpeed(IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper.runSpeed();
+    focuserStepper->enableOutputs();
+    focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
+    focuserStepper->runForward();
   }
 
   void onUpButtonLongPress() {
@@ -224,12 +224,12 @@ class IdleScreen : public Screen {
 
   void onDownButtonHeld() {
     if (!motorEnabled) {
-      focuserStepper.setSpeed(0.0f);
+      focuserStepper->stopMove();
       return;
     }
-    focuserStepper.enableOutputs();
-    focuserStepper.setSpeed(-IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper.runSpeed();
+    focuserStepper->enableOutputs();
+    focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
+    focuserStepper->runBackward();
   }
 
   void onDownButtonLongPress() {
@@ -237,7 +237,7 @@ class IdleScreen : public Screen {
   }
 
   void onDirectionButtonsReleased() {
-    focuserStepper.setSpeed(0.0f);
+    focuserStepper->stopMove();
   }
 
   const char *title_;
@@ -347,7 +347,7 @@ class PresetScreen : public Screen {
  private:
   void onSelectShortPress() {
     // Save the current position as the active preset target.
-    savedPresetPositionSteps = focuserStepper.currentPosition();
+    savedPresetPositionSteps = focuserStepper->getCurrentPosition();
   }
 
   void onSelectLongPress() {
@@ -364,12 +364,12 @@ class PresetScreen : public Screen {
 
   void onUpButtonHeld() {
     if (!motorEnabled) {
-      focuserStepper.setSpeed(0.0f);
+      focuserStepper->stopMove();
       return;
     }
-    focuserStepper.enableOutputs();
-    focuserStepper.setSpeed(IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper.runSpeed();
+    focuserStepper->enableOutputs();
+    focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
+    focuserStepper->runForward();
   }
 
   void onUpButtonLongPress() {
@@ -382,12 +382,12 @@ class PresetScreen : public Screen {
 
   void onDownButtonHeld() {
     if (!motorEnabled) {
-      focuserStepper.setSpeed(0.0f);
+      focuserStepper->stopMove();
       return;
     }
-    focuserStepper.enableOutputs();
-    focuserStepper.setSpeed(-IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper.runSpeed();
+    focuserStepper->enableOutputs();
+    focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
+    focuserStepper->runBackward();
   }
 
   void onDownButtonLongPress() {
@@ -395,7 +395,7 @@ class PresetScreen : public Screen {
   }
 
   void onDirectionButtonsReleased() {
-    focuserStepper.setSpeed(0.0f);
+    focuserStepper->stopMove();
   }
 
   const char *title_;
