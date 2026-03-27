@@ -15,10 +15,10 @@
  */
 #define TMC_UART_BAUDRATE 115200
 #define TMC_DRIVER_ADDRESS 0b00
-#define TMC_MAX_SPEED 80000
+#define TMC_MAX_SPEED 250000
 #define TMC_MAX_ACCELERATION 15000
 #define IDLE_JOG_SPEED_STEPS_PER_SEC 600
-#define HOMING_SPEED_STEPS_PER_SEC 73600
+#define HOMING_SPEED_STEPS_PER_SEC 20000
 
 /*
  * TMC2209 electrical and mode settings used during driver initialization.

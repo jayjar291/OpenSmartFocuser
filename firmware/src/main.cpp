@@ -10,6 +10,7 @@
  */
 static constexpr float TMC_R_SENSE = 0.11f;
 static constexpr uint8_t TMC_STEPPER_UART_INDEX = 1;
+static constexpr uint16_t HOMING_MICROSTEPS = 1;
 
 // globlal variables for idle star map center coordinates
 float idleMapCenterRaDeg = IDLE_STAR_MAP_CENTER_RA_DEG;
@@ -29,6 +30,20 @@ OpenMenuOS menu(PIN_BUTTON_UP, PIN_BUTTON_DOWN, PIN_BUTTON_SELECT);
 bool motorEnabled = false;
 bool homingInProgress = false;
 long savedPresetPositionSteps = 0;
+
+static void applyNormalMicrosteps() {
+  focuserDriver.microsteps(TMC_MICROSTEPS);
+}
+
+static void applyHomingMicrosteps() {
+  focuserDriver.microsteps(HOMING_MICROSTEPS);
+}
+
+static void stopHoming() {
+  focuserStepper.setSpeed(0.0f);
+  applyNormalMicrosteps();
+  homingInProgress = false;
+}
 
 /*
  * Application menu hierarchy: top-level pages and settings subpages.
@@ -76,7 +91,9 @@ static char kSettingSpreadCycle[] = "SpreadCycle";
  */
 static void toggleMotorEnabledAction() {
   motorEnabled = !motorEnabled;
-  homingInProgress = false;
+  if (homingInProgress) {
+    stopHoming();
+  }
   if (motorEnabled) {
     focuserStepper.enableOutputs();
   } else {
@@ -97,6 +114,7 @@ static void startHomingAction() {
 
   focuserStepper.stop();
   focuserStepper.setSpeed(0.0f);
+  applyHomingMicrosteps();
   homingInProgress = true;
 }
 
@@ -116,21 +134,20 @@ static void updateHoming() {
   }
 
   if (!motorEnabled) {
-    homingInProgress = false;
-    focuserStepper.setSpeed(0.0f);
+    stopHoming();
     return;
   }
 
   if (isEndstopTriggered()) {
-    focuserStepper.setSpeed(0.0f);
     focuserStepper.setCurrentPosition(0);
-    homingInProgress = false;
+    stopHoming();
     return;
   }
 
+  const float homingSpeed = static_cast<float>(HOMING_SPEED_STEPS_PER_SEC);
   focuserStepper.enableOutputs();
-  focuserStepper.setMaxSpeed(HOMING_SPEED_STEPS_PER_SEC);
-  focuserStepper.setSpeed(-HOMING_SPEED_STEPS_PER_SEC);
+  focuserStepper.setMaxSpeed(homingSpeed*2);
+  focuserStepper.setSpeed(-homingSpeed);
   focuserStepper.runSpeed();
 }
 
@@ -202,7 +219,7 @@ static void initDriver() {
   focuserDriver.begin();
   focuserDriver.toff(4);
   focuserDriver.rms_current(TMC_RMS_CURRENT);
-  focuserDriver.microsteps(TMC_MICROSTEPS);
+  applyNormalMicrosteps();
   focuserDriver.pwm_autoscale(true);
 
   focuserStepper.setMaxSpeed(TMC_MAX_SPEED);
