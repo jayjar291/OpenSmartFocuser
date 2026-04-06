@@ -9,16 +9,14 @@
 
 /*
  * Generic motion and UART timing configuration for the focuser driver stack.
- * With a 1:23 worm reduction and 2 mm leadscrew lead, 1 mm/s linear travel
- * requires about 11.5 motor rev/s. At 200 full steps/rev and 16 microsteps,
- * that is 36,800 driver steps/s.
+ * System now runs in full-step mode (1 microstep) for all operations.
  */
 #define TMC_UART_BAUDRATE 115200
 #define TMC_DRIVER_ADDRESS 0b00
 #define TMC_MAX_SPEED 150000
 #define TMC_MAX_ACCELERATION 50000
-#define IDLE_JOG_SPEED_STEPS_PER_SEC 1000
-#define HOMING_SPEED_STEPS_PER_SEC 40000
+#define IDLE_JOG_SPEED_STEPS_PER_SEC 6000
+#define HOMING_SPEED_STEPS_PER_SEC 30000
 
 /*
  * TMC2209 electrical and mode settings used during driver initialization.
@@ -26,6 +24,22 @@
 #define TMC_RMS_CURRENT 700
 #define TMC_MICROSTEPS 16
 #define TMC_SPREAD_CYCLE true
+
+/*
+ * Focuser travel calibration.
+ * Measured: 184000 full steps (HOMING_MICROSTEPS=1) = 4.74 mm.
+ * FOCUSER_STEPS_PER_MM is in runtime step units (full-step mode).
+ */
+#define FOCUSER_STEPS_PER_MM 38819
+
+/*
+ * Software travel limits (enforced in normal operating mode).
+ */
+#define FOCUSER_SOFT_MIN_MM    0
+#define FOCUSER_SOFT_MAX_MM    55
+#define FOCUSER_SOFT_MIN_STEPS 0
+#define FOCUSER_SOFT_MAX_STEPS (FOCUSER_SOFT_MAX_MM * FOCUSER_STEPS_PER_MM)
+#define FOCUSER_HOMING_RETURN_MM 1
 
 /*
  * User-facing device defaults used by the menu/UI layer.

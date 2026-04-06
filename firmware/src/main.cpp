@@ -2,16 +2,17 @@
 #include <FastAccelStepper.h>
 #include <TMCStepper.h>
 #include <OpenMenuOS.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "config.h"
 #include "custom_screens.h"
+#include "movement.h"
 
 /*
  * Hardware interface constants for TMC2209 UART control.
  */
 static constexpr float TMC_R_SENSE = 0.11f;
 static constexpr uint8_t TMC_STEPPER_UART_INDEX = 1;
-static constexpr uint16_t HOMING_MICROSTEPS = 1;
-
 // globlal variables for idle star map center coordinates
 float idleMapCenterRaDeg = IDLE_STAR_MAP_CENTER_RA_DEG;
 float idleMapCenterDecDeg = IDLE_STAR_MAP_CENTER_DEC_DEG;
@@ -29,22 +30,16 @@ OpenMenuOS menu(PIN_BUTTON_UP, PIN_BUTTON_DOWN, PIN_BUTTON_SELECT);
  * Global motor enable state controlled from the main menu.
  */
 bool motorEnabled = false;
-bool homingInProgress = false;
 long savedPresetPositionSteps = 0;
 
-static void applyNormalMicrosteps() {
-  focuserDriver.microsteps(TMC_MICROSTEPS);
-}
+static TaskHandle_t motorTaskHandle = nullptr;
 
-static void applyHomingMicrosteps() {
-  focuserDriver.microsteps(HOMING_MICROSTEPS);
-}
-
-static void stopHoming() {
-  focuserStepper->forceStop();
-  focuserStepper->setSpeedInHz(TMC_MAX_SPEED);
-  applyNormalMicrosteps();
-  homingInProgress = false;
+static void motorTask(void* /*param*/) {
+  for (;;) {
+    Movement::updateHoming();
+    Movement::updateSoftEndstops();
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
 }
 
 /*
@@ -92,16 +87,10 @@ static char kSettingSpreadCycle[] = "SpreadCycle";
  * Main-menu callback that toggles motor outputs on/off.
  */
 static void toggleMotorEnabledAction() {
-  motorEnabled = !motorEnabled;
-  if (homingInProgress) {
-    stopHoming();
+  if (Movement::isBusy()) {
+    Movement::abortHoming();
   }
-  if (motorEnabled) {
-    focuserStepper->enableOutputs();
-  } else {
-    focuserStepper->stopMove();
-    focuserStepper->disableOutputs();
-  }
+  Movement::toggleMotorEnabled();
 }
 
 /*
@@ -109,43 +98,8 @@ static void toggleMotorEnabledAction() {
  */
 static void startHomingAction() {
   screenManager.pushScreen(&idleScreen);
-  if (!motorEnabled) {
-    motorEnabled = true;
-    focuserStepper->enableOutputs();
-  }
-
-  focuserStepper->stopMove();
-  applyHomingMicrosteps();
-  focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
-  focuserStepper->runBackward();
-  homingInProgress = true;
-}
-
-/*
- * Endstop condition for homing sequence (active-low input).
- */
-static bool isEndstopTriggered() {
-  return digitalRead(PIN_BUTTON_ENDSTOP) == LOW;
-}
-
-/*
- * Runs the homing state machine independently from any custom screen.
- */
-static void updateHoming() {
-  if (!homingInProgress) {
-    return;
-  }
-
-  if (!motorEnabled) {
-    stopHoming();
-    return;
-  }
-
-  if (isEndstopTriggered()) {
-    focuserStepper->forceStopAndNewPosition(0);
-    stopHoming();
-    return;
-  }
+  delay(100); // Brief delay to allow idle screen to render before starting homing
+  Movement::startHoming();
 }
 
 /*
@@ -166,14 +120,32 @@ static void initMenu() {
   // Configure presets menu
   PresetsMenu.addItem(kFilter1, &Filter1);
   PresetsMenu.addItem(kPresetTestFocus);
+  PresetsMenu.addItem("0mm", nullptr, []() {
+    Movement::moveToPositionMm(0);
+  });
+  PresetsMenu.addItem("5mm", nullptr, []() {
+    Movement::moveToPositionMm(5);
+  });
+  PresetsMenu.addItem("10mm", nullptr, []() {
+    Movement::moveToPositionMm(10);
+  });
+  PresetsMenu.addItem("20mm", nullptr, []() {
+    Movement::moveToPositionMm(20);
+  });
+  PresetsMenu.addItem("50mm", nullptr, []() {
+    Movement::moveToPositionMm(50);
+  });
+  PresetsMenu.addItem("55mm", nullptr, []() {
+    Movement::moveToPositionMm(55);
+  });
+
 
   // Configure filter 1 preset page
   Filter1.addItem(kFilterGoto, nullptr, []() {
-    if (!motorEnabled) {
+    if (!Movement::isMotorEnabled()) {
       return;
     }
-    focuserStepper->enableOutputs();
-    focuserStepper->moveTo(savedPresetPositionSteps);
+    Movement::moveToPosition(savedPresetPositionSteps);
   });
   Filter1.addItem(kFilterEdit, &presetScreen);
   
@@ -199,47 +171,29 @@ static void initMenu() {
 }
 
 /*
- * Initializes STEP/DIR/ENABLE pins, brings up TMC2209 over UART,
- * and applies baseline stepper-driver and motion planner settings.
- */
-static void initDriver() {
-  pinMode(PIN_TMC_STEP, OUTPUT);
-  digitalWrite(PIN_TMC_STEP, LOW);
-  pinMode(PIN_TMC_DIR, OUTPUT);
-  digitalWrite(PIN_TMC_DIR, LOW);
-  pinMode(PIN_TMC_ENABLE, OUTPUT);
-  digitalWrite(PIN_TMC_ENABLE, HIGH);
-  pinMode(PIN_BUTTON_ENDSTOP, INPUT_PULLUP);
-
-  tmcSerial.begin(TMC_UART_BAUDRATE, SERIAL_8N1, PIN_TMC_UART_RX, PIN_TMC_UART_TX);
-
-  focuserDriver.begin();
-  focuserDriver.toff(4);
-  focuserDriver.rms_current(TMC_RMS_CURRENT);
-  applyNormalMicrosteps();
-  focuserDriver.pwm_autoscale(true);
-
-  stepperEngine.init();
-  focuserStepper = stepperEngine.stepperConnectToPin(PIN_TMC_STEP);
-  focuserStepper->setDirectionPin(PIN_TMC_DIR);
-  focuserStepper->setEnablePin(PIN_TMC_ENABLE, true); // active LOW: LOW = motor enabled
-  focuserStepper->setSpeedInHz(TMC_MAX_SPEED);
-  focuserStepper->setAcceleration(TMC_MAX_ACCELERATION);
-  motorEnabled = false;
-  homingInProgress = false;
-  focuserStepper->disableOutputs();
-}
-
-/*
  * One-time startup sequence for serial logging, UI initialization,
  * and TMC driver bring-up.
  */
 void setup() {
+  Serial.begin(115200);
   delay(100);
 
   initMenu();
 
-  initDriver();
+  Movement::initializeDriver();
+
+  // Core 0 handles motor/homing/endstop tasks. loop() remains on Core 1 for UI/menu.
+  BaseType_t taskCreated = xTaskCreatePinnedToCore(
+      motorTask,
+      "motorTask",
+      4096,
+      nullptr,
+      2,
+      &motorTaskHandle,
+      0);
+  if (taskCreated != pdPASS) {
+    Serial.println("Failed to start motor task on Core 0");
+  }
 }
 
 /*
@@ -247,12 +201,6 @@ void setup() {
  * current brightness setting to the display backlight PWM pin.
  */
 void loop() {
-  updateHoming();
-
-  if (homingInProgress) {
-    return;
-  }
-
   menu.loop();
   analogWrite(PIN_LCD_BL, settingsScreen.getSettingValue("Brightness") * 255 / 100);
 }

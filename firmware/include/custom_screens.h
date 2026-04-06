@@ -3,13 +3,12 @@
 #include <OpenMenuOS.h>
 #include <FastAccelStepper.h>
 #include "config.h"
+#include "movement.h"
 #include "star_map_renderer.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
 extern ScreenManager screenManager;
 extern MenuScreen mainMenu;
-extern FastAccelStepper* focuserStepper;
-extern bool motorEnabled;
 extern long savedPresetPositionSteps;
 extern int buttonVoltage;
 extern int BUTTON_UP_PIN;
@@ -57,16 +56,43 @@ class IdleScreen : public Screen {
     // Bottom status bar must span the full width, including the right edge.
     canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
 
-    // Right-side vertical placeholder bar for focuser position visualization.
+    // Right-side vertical bar for focuser position visualization.
     canvas.fillRect(rightBarX, 0, kRightBarWidth, screenHeight, IDLE_COLOR_RIGHT_BAR);
     canvas.drawRect(rightBarX, 0, kRightBarWidth, screenHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
 
-    // Bottom status bar content: left-aligned reticle icon + target field.
+    // Draw focuser position marker as "+" inside the right bar.
+    int32_t pos = Movement::getCurrentPositionSteps();
+    if (pos < FOCUSER_SOFT_MIN_STEPS) {
+      pos = FOCUSER_SOFT_MIN_STEPS;
+    } else if (pos > FOCUSER_SOFT_MAX_STEPS) {
+      pos = FOCUSER_SOFT_MAX_STEPS;
+    }
+
+    const int barTop = 1;
+    const int barBottom = screenHeight - 2;
+    const int barHeight = barBottom - barTop;
+    const int32_t range = FOCUSER_SOFT_MAX_STEPS - FOCUSER_SOFT_MIN_STEPS;
+
+    int markerY = barBottom;
+    if (range > 0) {
+      // 0 mm at bottom, max mm at top.
+      markerY = barBottom - static_cast<int>(
+          (static_cast<int64_t>(pos - FOCUSER_SOFT_MIN_STEPS) * barHeight) / range);
+    }
+
+    const int markerX = rightBarX + (kRightBarWidth / 2) - 3;
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_RIGHT_BAR);
+    canvas.drawString("+", markerX, markerY - 3);
+
+    // Bottom status bar content.
     canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BOTTOM_BAR);
     canvas.drawString("+", kTextPaddingX, bottomBarY + 4);
-    canvas.drawString("Target: ----", kTextPaddingX + 14, bottomBarY + 4);
+    canvas.drawString(
+        Movement::isBusy() ? "Status: Homing" : "Status: Idle",
+        kTextPaddingX + 14,
+        bottomBarY + 4);
 
-    // Spacer marker to separate target text from future status fields.
+    // Spacer marker to separate status text from future fields.
     canvas.drawFastVLine(120, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
   }
 
@@ -205,13 +231,7 @@ class IdleScreen : public Screen {
   }
 
   void onUpButtonHeld() {
-    if (!motorEnabled) {
-      focuserStepper->stopMove();
-      return;
-    }
-    focuserStepper->enableOutputs();
-    focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper->runForward();
+    Movement::jogForward();
   }
 
   void onUpButtonLongPress() {
@@ -223,13 +243,7 @@ class IdleScreen : public Screen {
   }
 
   void onDownButtonHeld() {
-    if (!motorEnabled) {
-      focuserStepper->stopMove();
-      return;
-    }
-    focuserStepper->enableOutputs();
-    focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper->runBackward();
+    Movement::jogBackward();
   }
 
   void onDownButtonLongPress() {
@@ -237,7 +251,7 @@ class IdleScreen : public Screen {
   }
 
   void onDirectionButtonsReleased() {
-    focuserStepper->stopMove();
+    Movement::stopJog();
   }
 
   const char *title_;
@@ -347,7 +361,7 @@ class PresetScreen : public Screen {
  private:
   void onSelectShortPress() {
     // Save the current position as the active preset target.
-    savedPresetPositionSteps = focuserStepper->getCurrentPosition();
+    savedPresetPositionSteps = Movement::getCurrentPositionSteps();
   }
 
   void onSelectLongPress() {
@@ -363,13 +377,7 @@ class PresetScreen : public Screen {
   }
 
   void onUpButtonHeld() {
-    if (!motorEnabled) {
-      focuserStepper->stopMove();
-      return;
-    }
-    focuserStepper->enableOutputs();
-    focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper->runForward();
+    Movement::jogForward();
   }
 
   void onUpButtonLongPress() {
@@ -381,13 +389,7 @@ class PresetScreen : public Screen {
   }
 
   void onDownButtonHeld() {
-    if (!motorEnabled) {
-      focuserStepper->stopMove();
-      return;
-    }
-    focuserStepper->enableOutputs();
-    focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper->runBackward();
+    Movement::jogBackward();
   }
 
   void onDownButtonLongPress() {
@@ -395,7 +397,7 @@ class PresetScreen : public Screen {
   }
 
   void onDirectionButtonsReleased() {
-    focuserStepper->stopMove();
+    Movement::stopJog();
   }
 
   const char *title_;
