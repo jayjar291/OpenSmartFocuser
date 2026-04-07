@@ -1,15 +1,17 @@
 #pragma once
 
 #include <OpenMenuOS.h>
-#include <AccelStepper.h>
+#include <FastAccelStepper.h>
+#include <Preferences.h>
+#include <stdio.h>
 #include "config.h"
+#include "lucide28.h"
+#include "movement.h"
 #include "star_map_renderer.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
 extern ScreenManager screenManager;
 extern MenuScreen mainMenu;
-extern AccelStepper focuserStepper;
-extern bool motorEnabled;
 extern long savedPresetPositionSteps;
 extern int buttonVoltage;
 extern int BUTTON_UP_PIN;
@@ -26,6 +28,10 @@ namespace CustomScreens {
 static constexpr int kShortPressTimeMs = 300;
 static constexpr int kLongPressTimeMs = 500;
 static constexpr int kSelectLongPressMs = 300;
+static constexpr uint16_t kIdleStatusIconColor = 0x07E0;  // Green
+// Lucide unicode icons provided by user font.
+static constexpr const char* kIconTelescope = "\xEF\x8F\xAF";
+static constexpr const char* kIconTarget = "\xEF\x86\xBC";
 
 /*
  * Idle screen shown when no active menu interaction is needed.
@@ -38,7 +44,7 @@ class IdleScreen : public Screen {
 
   void draw() override {
     static constexpr int kBottomBarHeight = 20;
-    static constexpr int kRightBarWidth = 14;
+    static constexpr int kRightBarWidth = 22;
     static constexpr int kTextPaddingX = 4;
     static constexpr float kMapFovDeg = 60.0f;
 
@@ -52,21 +58,57 @@ class IdleScreen : public Screen {
     // Clear the full screen first so non-bar regions stay blank.
     canvas.fillScreen(IDLE_COLOR_BG);
 
+    canvas.loadFont(lucide28);
     drawStarMap(0, 0, mapWidth, mapHeight, kMapFovDeg);
+    canvas.unloadFont();
 
-    // Bottom status bar must span the full width, including the right edge.
+    // Right-side vertical bar for focuser position visualization.
+    canvas.fillRect(rightBarX, 0, kRightBarWidth, mapHeight, IDLE_COLOR_RIGHT_BAR);
+    canvas.drawRect(rightBarX, 0, kRightBarWidth, mapHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
+
+    // Bottom status bar must span the full width, including under the right bar area.
     canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
 
-    // Right-side vertical placeholder bar for focuser position visualization.
-    canvas.fillRect(rightBarX, 0, kRightBarWidth, screenHeight, IDLE_COLOR_RIGHT_BAR);
-    canvas.drawRect(rightBarX, 0, kRightBarWidth, screenHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
+    // Draw focuser position marker icon inside the right bar.
+    int32_t pos = Movement::getCurrentPositionSteps();
+    if (pos < FOCUSER_SOFT_MIN_STEPS) {
+      pos = FOCUSER_SOFT_MIN_STEPS;
+    } else if (pos > FOCUSER_SOFT_MAX_STEPS) {
+      pos = FOCUSER_SOFT_MAX_STEPS;
+    }
 
-    // Bottom status bar content: left-aligned reticle icon + target field.
+    const int barTop = 1;
+    const int barBottom = bottomBarY - 2;
+    const int barHeight = barBottom - barTop;
+    const int32_t range = FOCUSER_SOFT_MAX_STEPS - FOCUSER_SOFT_MIN_STEPS;
+
+    int markerY = barBottom;
+    if (range > 0) {
+      // 0 mm at bottom, max mm at top.
+      markerY = barBottom - static_cast<int>(
+          (static_cast<int64_t>(pos - FOCUSER_SOFT_MIN_STEPS) * barHeight) / range);
+    }
+
+    const int indicatorY = constrain(markerY, barTop + 2, barBottom - 2);
+    const int indicatorX = rightBarX + 4;
+    const int indicatorW = kRightBarWidth - 8;
+    canvas.fillRect(indicatorX, indicatorY, indicatorW, 2, IDLE_COLOR_TEXT);
+
+    // Bottom status bar content.
+    canvas.setTextColor(kIdleStatusIconColor, IDLE_COLOR_BOTTOM_BAR);
+    canvas.loadFont(lucide28);
+    canvas.drawString(kIconTelescope, kTextPaddingX, bottomBarY + 3);
+    canvas.unloadFont();
+    canvas.drawFastVLine(28, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
     canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BOTTOM_BAR);
-    canvas.drawString("+", kTextPaddingX, bottomBarY + 4);
-    canvas.drawString("Target: ----", kTextPaddingX + 14, bottomBarY + 4);
+    canvas.drawString(Movement::isBusy() ? "Homing" : "Idle", 34, bottomBarY + 4);
 
-    // Spacer marker to separate target text from future status fields.
+    char posMmText[12];
+    const float posMm = static_cast<float>(pos) / static_cast<float>(FOCUSER_STEPS_PER_MM);
+    snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
+    canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
+
+    // Spacer marker to separate status text from future fields.
     canvas.drawFastVLine(120, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
   }
 
@@ -186,8 +228,8 @@ class IdleScreen : public Screen {
     // Center marker for configured pointing target.
     const int cx = StarMapRenderer::centerX(viewport);
     const int cy = StarMapRenderer::centerY(viewport);
-    canvas.drawFastHLine(cx - 3, cy, 7, IDLE_COLOR_TEXT);
-    canvas.drawFastVLine(cx, cy - 3, 7, IDLE_COLOR_TEXT);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
+    canvas.drawString(kIconTarget, cx - 3, cy - 5);
   }
 
   void onSelectShortPress() {
@@ -205,13 +247,7 @@ class IdleScreen : public Screen {
   }
 
   void onUpButtonHeld() {
-    if (!motorEnabled) {
-      focuserStepper.setSpeed(0.0f);
-      return;
-    }
-    focuserStepper.enableOutputs();
-    focuserStepper.setSpeed(IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper.runSpeed();
+    Movement::jogForward();
   }
 
   void onUpButtonLongPress() {
@@ -223,13 +259,7 @@ class IdleScreen : public Screen {
   }
 
   void onDownButtonHeld() {
-    if (!motorEnabled) {
-      focuserStepper.setSpeed(0.0f);
-      return;
-    }
-    focuserStepper.enableOutputs();
-    focuserStepper.setSpeed(-IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper.runSpeed();
+    Movement::jogBackward();
   }
 
   void onDownButtonLongPress() {
@@ -237,7 +267,7 @@ class IdleScreen : public Screen {
   }
 
   void onDirectionButtonsReleased() {
-    focuserStepper.setSpeed(0.0f);
+    Movement::stopJog();
   }
 
   const char *title_;
@@ -248,14 +278,78 @@ class IdleScreen : public Screen {
  */
 class PresetScreen : public Screen {
  public:
-  explicit PresetScreen(const char *title = "Preset")
-      : title_(title) {
+  explicit PresetScreen(const char *title = "Preset", uint8_t presetId = 0)
+    : title_(title), presetId_(presetId) {
   }
 
   void draw() override {
-    canvas.fillScreen(TFT_BLACK);
-    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
-    canvas.drawString("Preset", 10, 10);
+    static constexpr int kBottomBarHeight = 20;
+    static constexpr int kRightBarWidth = 22;
+    static constexpr int kTextPaddingX = 4;
+
+    int screenWidth = canvas.width();
+    int screenHeight = canvas.height();
+    int bottomBarY = screenHeight - kBottomBarHeight;
+    int rightBarX = screenWidth - kRightBarWidth;
+    int panelWidth = rightBarX;
+    int panelHeight = bottomBarY;
+
+    // Base background.
+    canvas.fillScreen(IDLE_COLOR_BG);
+
+    // Main preset content area (replaces idle star map).
+    canvas.drawRect(0, 0, panelWidth, panelHeight, IDLE_COLOR_SPACER);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
+    canvas.drawString(title_, 8, 8);
+    canvas.drawString("SELECT: Save current", 8, 30);
+    canvas.drawString("UP/DOWN: Jog focus", 8, 46);
+    canvas.drawString("Hold SELECT: Back", 8, 62);
+
+    // Right-side position bar.
+    canvas.fillRect(rightBarX, 0, kRightBarWidth, panelHeight, IDLE_COLOR_RIGHT_BAR);
+    canvas.drawRect(rightBarX, 0, kRightBarWidth, panelHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
+
+    // Bottom status bar across full width.
+    canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
+
+    int32_t pos = Movement::getCurrentPositionSteps();
+    if (pos < FOCUSER_SOFT_MIN_STEPS) {
+      pos = FOCUSER_SOFT_MIN_STEPS;
+    } else if (pos > FOCUSER_SOFT_MAX_STEPS) {
+      pos = FOCUSER_SOFT_MAX_STEPS;
+    }
+
+    const int barTop = 1;
+    const int barBottom = bottomBarY - 2;
+    const int barHeight = barBottom - barTop;
+    const int32_t range = FOCUSER_SOFT_MAX_STEPS - FOCUSER_SOFT_MIN_STEPS;
+
+    int markerY = barBottom;
+    if (range > 0) {
+      markerY = barBottom - static_cast<int>(
+          (static_cast<int64_t>(pos - FOCUSER_SOFT_MIN_STEPS) * barHeight) / range);
+    }
+
+    const int indicatorY = constrain(markerY, barTop + 2, barBottom - 2);
+    const int indicatorX = rightBarX + 4;
+    const int indicatorW = kRightBarWidth - 8;
+    canvas.fillRect(indicatorX, indicatorY, indicatorW, 2, IDLE_COLOR_TEXT);
+
+    // Bottom status content.
+    canvas.setTextColor(kIdleStatusIconColor, IDLE_COLOR_BOTTOM_BAR);
+    canvas.loadFont(lucide28);
+    canvas.drawString(kIconTelescope, kTextPaddingX, bottomBarY + 3);
+    canvas.unloadFont();
+    canvas.drawFastVLine(28, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BOTTOM_BAR);
+    canvas.drawString(Movement::isBusy() ? "Homing" : "Preset", 34, bottomBarY + 4);
+
+    char posMmText[12];
+    const float posMm = static_cast<float>(pos) / static_cast<float>(FOCUSER_STEPS_PER_MM);
+    snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
+    canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
+
+    canvas.drawFastVLine(120, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
   }
 
   void handleInput() override {
@@ -347,7 +441,16 @@ class PresetScreen : public Screen {
  private:
   void onSelectShortPress() {
     // Save the current position as the active preset target.
-    savedPresetPositionSteps = focuserStepper.currentPosition();
+    const long currentSteps = static_cast<long>(Movement::getCurrentPositionSteps());
+    savedPresetPositionSteps = currentSteps;
+
+    Preferences preferences;
+    if (preferences.begin("Positions", false)) {
+      char key[4];
+      snprintf(key, sizeof(key), "%u", presetId_);
+      preferences.putLong(key, currentSteps);
+      preferences.end();
+    }
   }
 
   void onSelectLongPress() {
@@ -363,13 +466,7 @@ class PresetScreen : public Screen {
   }
 
   void onUpButtonHeld() {
-    if (!motorEnabled) {
-      focuserStepper.setSpeed(0.0f);
-      return;
-    }
-    focuserStepper.enableOutputs();
-    focuserStepper.setSpeed(IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper.runSpeed();
+    Movement::jogForward();
   }
 
   void onUpButtonLongPress() {
@@ -381,13 +478,7 @@ class PresetScreen : public Screen {
   }
 
   void onDownButtonHeld() {
-    if (!motorEnabled) {
-      focuserStepper.setSpeed(0.0f);
-      return;
-    }
-    focuserStepper.enableOutputs();
-    focuserStepper.setSpeed(-IDLE_JOG_SPEED_STEPS_PER_SEC);
-    focuserStepper.runSpeed();
+    Movement::jogBackward();
   }
 
   void onDownButtonLongPress() {
@@ -395,10 +486,11 @@ class PresetScreen : public Screen {
   }
 
   void onDirectionButtonsReleased() {
-    focuserStepper.setSpeed(0.0f);
+    Movement::stopJog();
   }
 
   const char *title_;
+  uint8_t presetId_;
 };
 
 /*
