@@ -22,7 +22,7 @@
  * Enables framed debug text output on Serial as !{message}*.
  * Protocol responses remain unchanged.
  */
-#define SERIAL_DEBUG_ENABLED true
+#define SERIAL_DEBUG_ENABLED false
 
 /*
  * TMC2209 electrical and mode settings used during driver initialization.
