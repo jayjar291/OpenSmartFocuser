@@ -9,7 +9,7 @@ inline void printFramed(const char* message) {
 #if SERIAL_DEBUG_ENABLED
   Serial.print("!{");
   Serial.print(message);
-  Serial.print("}*");
+  Serial.println("}*");
 #else
   (void)message;
 #endif
@@ -22,7 +22,7 @@ inline void printFramedValue(const char* prefix, T value, const char* suffix) {
   Serial.print(prefix);
   Serial.print(value);
   Serial.print(suffix);
-  Serial.print("}*");
+  Serial.println("}*");
 #else
   (void)prefix;
   (void)value;
