@@ -2,7 +2,9 @@
 
 #include <OpenMenuOS.h>
 #include <FastAccelStepper.h>
+#include <stdio.h>
 #include "config.h"
+#include "lucide28.h"
 #include "movement.h"
 #include "star_map_renderer.h"
 
@@ -25,6 +27,10 @@ namespace CustomScreens {
 static constexpr int kShortPressTimeMs = 300;
 static constexpr int kLongPressTimeMs = 500;
 static constexpr int kSelectLongPressMs = 300;
+static constexpr uint16_t kIdleStatusIconColor = 0x07E0;  // Green
+// Lucide unicode icons provided by user font.
+static constexpr const char* kIconTelescope = "\xEF\x8F\xAF";
+static constexpr const char* kIconTarget = "\xEF\x86\xBC";
 
 /*
  * Idle screen shown when no active menu interaction is needed.
@@ -37,7 +43,7 @@ class IdleScreen : public Screen {
 
   void draw() override {
     static constexpr int kBottomBarHeight = 20;
-    static constexpr int kRightBarWidth = 14;
+    static constexpr int kRightBarWidth = 22;
     static constexpr int kTextPaddingX = 4;
     static constexpr float kMapFovDeg = 60.0f;
 
@@ -51,16 +57,18 @@ class IdleScreen : public Screen {
     // Clear the full screen first so non-bar regions stay blank.
     canvas.fillScreen(IDLE_COLOR_BG);
 
+    canvas.loadFont(lucide28);
     drawStarMap(0, 0, mapWidth, mapHeight, kMapFovDeg);
-
-    // Bottom status bar must span the full width, including the right edge.
-    canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
+    canvas.unloadFont();
 
     // Right-side vertical bar for focuser position visualization.
-    canvas.fillRect(rightBarX, 0, kRightBarWidth, screenHeight, IDLE_COLOR_RIGHT_BAR);
-    canvas.drawRect(rightBarX, 0, kRightBarWidth, screenHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
+    canvas.fillRect(rightBarX, 0, kRightBarWidth, mapHeight, IDLE_COLOR_RIGHT_BAR);
+    canvas.drawRect(rightBarX, 0, kRightBarWidth, mapHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
 
-    // Draw focuser position marker as "+" inside the right bar.
+    // Bottom status bar must span the full width, including under the right bar area.
+    canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
+
+    // Draw focuser position marker icon inside the right bar.
     int32_t pos = Movement::getCurrentPositionSteps();
     if (pos < FOCUSER_SOFT_MIN_STEPS) {
       pos = FOCUSER_SOFT_MIN_STEPS;
@@ -69,7 +77,7 @@ class IdleScreen : public Screen {
     }
 
     const int barTop = 1;
-    const int barBottom = screenHeight - 2;
+    const int barBottom = bottomBarY - 2;
     const int barHeight = barBottom - barTop;
     const int32_t range = FOCUSER_SOFT_MAX_STEPS - FOCUSER_SOFT_MIN_STEPS;
 
@@ -80,17 +88,24 @@ class IdleScreen : public Screen {
           (static_cast<int64_t>(pos - FOCUSER_SOFT_MIN_STEPS) * barHeight) / range);
     }
 
-    const int markerX = rightBarX + (kRightBarWidth / 2) - 3;
-    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_RIGHT_BAR);
-    canvas.drawString("+", markerX, markerY - 3);
+    const int indicatorY = constrain(markerY, barTop + 2, barBottom - 2);
+    const int indicatorX = rightBarX + 4;
+    const int indicatorW = kRightBarWidth - 8;
+    canvas.fillRect(indicatorX, indicatorY, indicatorW, 2, IDLE_COLOR_TEXT);
 
     // Bottom status bar content.
+    canvas.setTextColor(kIdleStatusIconColor, IDLE_COLOR_BOTTOM_BAR);
+    canvas.loadFont(lucide28);
+    canvas.drawString(kIconTelescope, kTextPaddingX, bottomBarY + 3);
+    canvas.unloadFont();
+    canvas.drawFastVLine(28, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
     canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BOTTOM_BAR);
-    canvas.drawString("+", kTextPaddingX, bottomBarY + 4);
-    canvas.drawString(
-        Movement::isBusy() ? "Status: Homing" : "Status: Idle",
-        kTextPaddingX + 14,
-        bottomBarY + 4);
+    canvas.drawString(Movement::isBusy() ? "Homing" : "Idle", 34, bottomBarY + 4);
+
+    char posMmText[12];
+    const float posMm = static_cast<float>(pos) / static_cast<float>(FOCUSER_STEPS_PER_MM);
+    snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
+    canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
 
     // Spacer marker to separate status text from future fields.
     canvas.drawFastVLine(120, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
@@ -212,8 +227,8 @@ class IdleScreen : public Screen {
     // Center marker for configured pointing target.
     const int cx = StarMapRenderer::centerX(viewport);
     const int cy = StarMapRenderer::centerY(viewport);
-    canvas.drawFastHLine(cx - 3, cy, 7, IDLE_COLOR_TEXT);
-    canvas.drawFastVLine(cx, cy - 3, 7, IDLE_COLOR_TEXT);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
+    canvas.drawString(kIconTarget, cx - 3, cy - 5);
   }
 
   void onSelectShortPress() {
