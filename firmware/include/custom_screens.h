@@ -2,6 +2,7 @@
 
 #include <OpenMenuOS.h>
 #include <FastAccelStepper.h>
+#include <Preferences.h>
 #include <stdio.h>
 #include "config.h"
 #include "lucide28.h"
@@ -277,14 +278,78 @@ class IdleScreen : public Screen {
  */
 class PresetScreen : public Screen {
  public:
-  explicit PresetScreen(const char *title = "Preset")
-      : title_(title) {
+  explicit PresetScreen(const char *title = "Preset", uint8_t presetId = 0)
+    : title_(title), presetId_(presetId) {
   }
 
   void draw() override {
-    canvas.fillScreen(TFT_BLACK);
-    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
-    canvas.drawString("Preset", 10, 10);
+    static constexpr int kBottomBarHeight = 20;
+    static constexpr int kRightBarWidth = 22;
+    static constexpr int kTextPaddingX = 4;
+
+    int screenWidth = canvas.width();
+    int screenHeight = canvas.height();
+    int bottomBarY = screenHeight - kBottomBarHeight;
+    int rightBarX = screenWidth - kRightBarWidth;
+    int panelWidth = rightBarX;
+    int panelHeight = bottomBarY;
+
+    // Base background.
+    canvas.fillScreen(IDLE_COLOR_BG);
+
+    // Main preset content area (replaces idle star map).
+    canvas.drawRect(0, 0, panelWidth, panelHeight, IDLE_COLOR_SPACER);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
+    canvas.drawString(title_, 8, 8);
+    canvas.drawString("SELECT: Save current", 8, 30);
+    canvas.drawString("UP/DOWN: Jog focus", 8, 46);
+    canvas.drawString("Hold SELECT: Back", 8, 62);
+
+    // Right-side position bar.
+    canvas.fillRect(rightBarX, 0, kRightBarWidth, panelHeight, IDLE_COLOR_RIGHT_BAR);
+    canvas.drawRect(rightBarX, 0, kRightBarWidth, panelHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
+
+    // Bottom status bar across full width.
+    canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
+
+    int32_t pos = Movement::getCurrentPositionSteps();
+    if (pos < FOCUSER_SOFT_MIN_STEPS) {
+      pos = FOCUSER_SOFT_MIN_STEPS;
+    } else if (pos > FOCUSER_SOFT_MAX_STEPS) {
+      pos = FOCUSER_SOFT_MAX_STEPS;
+    }
+
+    const int barTop = 1;
+    const int barBottom = bottomBarY - 2;
+    const int barHeight = barBottom - barTop;
+    const int32_t range = FOCUSER_SOFT_MAX_STEPS - FOCUSER_SOFT_MIN_STEPS;
+
+    int markerY = barBottom;
+    if (range > 0) {
+      markerY = barBottom - static_cast<int>(
+          (static_cast<int64_t>(pos - FOCUSER_SOFT_MIN_STEPS) * barHeight) / range);
+    }
+
+    const int indicatorY = constrain(markerY, barTop + 2, barBottom - 2);
+    const int indicatorX = rightBarX + 4;
+    const int indicatorW = kRightBarWidth - 8;
+    canvas.fillRect(indicatorX, indicatorY, indicatorW, 2, IDLE_COLOR_TEXT);
+
+    // Bottom status content.
+    canvas.setTextColor(kIdleStatusIconColor, IDLE_COLOR_BOTTOM_BAR);
+    canvas.loadFont(lucide28);
+    canvas.drawString(kIconTelescope, kTextPaddingX, bottomBarY + 3);
+    canvas.unloadFont();
+    canvas.drawFastVLine(28, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BOTTOM_BAR);
+    canvas.drawString(Movement::isBusy() ? "Homing" : "Preset", 34, bottomBarY + 4);
+
+    char posMmText[12];
+    const float posMm = static_cast<float>(pos) / static_cast<float>(FOCUSER_STEPS_PER_MM);
+    snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
+    canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
+
+    canvas.drawFastVLine(120, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
   }
 
   void handleInput() override {
@@ -376,7 +441,16 @@ class PresetScreen : public Screen {
  private:
   void onSelectShortPress() {
     // Save the current position as the active preset target.
-    savedPresetPositionSteps = Movement::getCurrentPositionSteps();
+    const long currentSteps = static_cast<long>(Movement::getCurrentPositionSteps());
+    savedPresetPositionSteps = currentSteps;
+
+    Preferences preferences;
+    if (preferences.begin("Positions", false)) {
+      char key[4];
+      snprintf(key, sizeof(key), "%u", presetId_);
+      preferences.putLong(key, currentSteps);
+      preferences.end();
+    }
   }
 
   void onSelectLongPress() {
@@ -416,6 +490,7 @@ class PresetScreen : public Screen {
   }
 
   const char *title_;
+  uint8_t presetId_;
 };
 
 /*

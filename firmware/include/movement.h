@@ -16,6 +16,7 @@ void stopJog();
 void moveToPosition(int32_t targetSteps);
 void moveToPositionMm(float targetMm);
 int32_t getCurrentPositionSteps();
+void setCurrentPositionSteps(int32_t positionSteps);
 
 void startHoming();
 void abortHoming();

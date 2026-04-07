@@ -134,6 +134,13 @@ int32_t getCurrentPositionSteps() {
   return focuserStepper->getCurrentPosition();
 }
 
+void setCurrentPositionSteps(int32_t positionSteps) {
+  if (focuserStepper == nullptr) {
+    return;
+  }
+  focuserStepper->forceStopAndNewPosition(positionSteps);
+}
+
 void abortHoming() {
   if (focuserStepper != nullptr) {
     focuserStepper->forceStop();
