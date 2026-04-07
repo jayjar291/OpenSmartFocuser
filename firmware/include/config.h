@@ -16,12 +16,18 @@
 #define TMC_MAX_SPEED 150000
 #define TMC_MAX_ACCELERATION 50000
 #define IDLE_JOG_SPEED_STEPS_PER_SEC 6000
-#define HOMING_SPEED_STEPS_PER_SEC 30000
+#define HOMING_SPEED_STEPS_PER_SEC 20000
+
+/*
+ * Enables framed debug text output on Serial as !{message}*.
+ * Protocol responses remain unchanged.
+ */
+#define SERIAL_DEBUG_ENABLED true
 
 /*
  * TMC2209 electrical and mode settings used during driver initialization.
  */
-#define TMC_RMS_CURRENT 700
+#define TMC_RMS_CURRENT 650
 #define TMC_MICROSTEPS 16
 #define TMC_SPREAD_CYCLE true
 

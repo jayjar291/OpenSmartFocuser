@@ -2,6 +2,7 @@
 #include <FastAccelStepper.h>
 #include <TMCStepper.h>
 #include "config.h"
+#include "debug_serial.h"
 #include "movement.h"
 
 extern FastAccelStepper* focuserStepper;
@@ -14,6 +15,7 @@ namespace {
 
 volatile bool homingInProgress = false;
 volatile bool homingReturnInProgress = false;
+bool jogActive = false;
 
 bool isEndstopTriggered() {
   return digitalRead(PIN_BUTTON_ENDSTOP) == LOW;
@@ -61,6 +63,7 @@ void toggleMotorEnabled() {
   if (motorEnabled) {
     focuserStepper->enableOutputs();
   } else {
+    jogActive = false;
     focuserStepper->stopMove();
     focuserStepper->disableOutputs();
   }
@@ -80,6 +83,7 @@ void jogForward() {
   }
   focuserStepper->enableOutputs();
   focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
+  jogActive = true;
   focuserStepper->runForward();
 }
 
@@ -93,6 +97,7 @@ void jogBackward() {
   }
   focuserStepper->enableOutputs();
   focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
+  jogActive = true;
   focuserStepper->runBackward();
 }
 
@@ -100,7 +105,10 @@ void stopJog() {
   if (focuserStepper == nullptr || homingInProgress || homingReturnInProgress) {
     return;
   }
-  focuserStepper->stopMove();
+  if (jogActive) {
+    focuserStepper->stopMove();
+    jogActive = false;
+  }
 }
 
 
@@ -111,6 +119,7 @@ void moveToPositionMm(float targetMm) {
   if (!motorEnabled) {
     return;
   }
+  jogActive = false;
   focuserStepper->enableOutputs();
   int32_t targetSteps = static_cast<int32_t>(targetMm * FOCUSER_STEPS_PER_MM);
   focuserStepper->moveTo(targetSteps);
@@ -123,6 +132,7 @@ void moveToPosition(int32_t targetSteps) {
   if (!motorEnabled) {
     return;
   }
+  jogActive = false;
   focuserStepper->enableOutputs();
   focuserStepper->moveTo(targetSteps);
 }
@@ -145,6 +155,7 @@ void abortHoming() {
   if (focuserStepper != nullptr) {
     focuserStepper->forceStop();
   }
+  jogActive = false;
   homingReturnInProgress = false;
   homingInProgress = false;
 }
@@ -154,9 +165,8 @@ void startHoming() {
     return;
   }
 
-  Serial.println("Starting homing sequence...");
-  Serial.print("Current position (steps): ");
-  Serial.println(getCurrentPositionSteps());
+  DebugSerial::printFramed("Starting homing sequence...");
+  DebugSerial::printFramedValue("Current position (steps): ", getCurrentPositionSteps(), "");
 
   if (!motorEnabled) {
     motorEnabled = true;
@@ -164,6 +174,7 @@ void startHoming() {
   }
 
   focuserStepper->stopMove();
+  jogActive = false;
   focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
   focuserStepper->runBackward();
   homingReturnInProgress = false;
@@ -182,9 +193,7 @@ void updateHoming() {
 
   if (homingReturnInProgress) {
     if (!focuserStepper->isRunning()) {
-      Serial.print("Homing complete. Position reset to ");
-      Serial.print(FOCUSER_HOMING_RETURN_MM);
-      Serial.println(" mm.");
+      DebugSerial::printFramedValue("Homing complete. Position reset to ", FOCUSER_HOMING_RETURN_MM, " mm.");
       homingReturnInProgress = false;
       homingInProgress = false;
     }
@@ -192,14 +201,13 @@ void updateHoming() {
   }
 
   if (isEndstopTriggered()) {
-    Serial.println("Endstop triggered during homing.");
-    Serial.print("Position at endstop trigger (steps): ");
-    Serial.println(getCurrentPositionSteps());
-    Serial.println("setting position to 0 and starting return move...");
+    DebugSerial::printFramed("Endstop triggered during homing.");
+    DebugSerial::printFramedValue("Position at endstop trigger (steps): ", getCurrentPositionSteps(), "");
+    DebugSerial::printFramed("setting position to 0 and starting return move...");
     focuserStepper->forceStopAndNewPosition(0);
 
     focuserStepper->forceStop();
-    Serial.println("moving back to return position...");
+    DebugSerial::printFramed("moving back to return position...");
     focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
     focuserStepper->moveTo(FOCUSER_STEPS_PER_MM * FOCUSER_HOMING_RETURN_MM);
     homingReturnInProgress = true;
@@ -214,7 +222,7 @@ void updateSoftEndstops() {
   const int32_t pos = focuserStepper->getCurrentPosition();
   if (pos < FOCUSER_SOFT_MIN_STEPS || pos > FOCUSER_SOFT_MAX_STEPS) {
     focuserStepper->stopMove();
-    Serial.println("Soft endstop triggered. Stopping movement.");
+    DebugSerial::printFramed("Soft endstop triggered. Stopping movement.");
   }
 }
 

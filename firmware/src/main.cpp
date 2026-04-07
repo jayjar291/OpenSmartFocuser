@@ -8,7 +8,9 @@
 #include <freertos/task.h>
 #include "config.h"
 #include "custom_screens.h"
+#include "debug_serial.h"
 #include "movement.h"
+#include "serial_command_handler.h"
 
 /*
  * Hardware interface constants for TMC2209 UART control.
@@ -128,7 +130,7 @@ static constexpr uint32_t kCurrentPositionSaveIntervalMs = 8000;
 static uint32_t gLastCurrentPositionSaveMs = 0;
 static int32_t gLastSavedCurrentPositionSteps = INT32_MIN;
 
-static long loadPresetPositionById(uint8_t id) {
+long loadPresetPositionById(uint8_t id) {
   Preferences preferences;
   long steps = 0;
   if (preferences.begin("Positions", true)) {
@@ -150,9 +152,9 @@ static void clearPresetPositionById(uint8_t id) {
   }
 }
 
-static void gotoPresetPositionById(uint8_t id) {
+void gotoPresetPositionById(uint8_t id) {
   if (!Movement::isMotorEnabled()) {
-    return;
+    Movement::toggleMotorEnabled();
   }
   savedPresetPositionSteps = loadPresetPositionById(id);
   Movement::moveToPosition(savedPresetPositionSteps);
@@ -371,6 +373,7 @@ static void initMenu() {
 void setup() {
   Serial.begin(115200);
   delay(100);
+  SerialCommandHandler::begin(Serial);
 
   initMenu();
 
@@ -387,7 +390,7 @@ void setup() {
       &motorTaskHandle,
       0);
   if (taskCreated != pdPASS) {
-    Serial.println("Failed to start motor task on Core 0");
+    DebugSerial::printFramed("Failed to start motor task on Core 0");
   }
 }
 
@@ -397,6 +400,7 @@ void setup() {
  */
 void loop() {
   menu.loop();
+  SerialCommandHandler::poll();
   savePersistentCurrentPositionIfDue();
   analogWrite(PIN_LCD_BL, settingsScreen.getSettingValue("Brightness") * 255 / 100);
 }
