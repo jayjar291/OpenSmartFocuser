@@ -7,10 +7,11 @@ namespace SerialCommandIndex {
 
 struct CommandEntry {
   const char* token;
-  size_t tokenLength;
+  const uint8_t tokenLength;
   SerialCommandHandler::CommandCallback callback;
 };
 
-const CommandEntry* find(const char* token, size_t tokenLength);
+bool dispatch(const char* frame,
+              size_t frameLength);
 
 } // namespace SerialCommandIndex

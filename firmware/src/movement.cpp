@@ -167,6 +167,10 @@ void startHoming() {
 
   DebugSerial::printFramed("Starting homing sequence...");
   DebugSerial::printFramedValue("Current position (steps): ", getCurrentPositionSteps(), "");
+  
+  homingReturnInProgress = false;
+  homingInProgress = true;
+  jogActive = false;
 
   if (!motorEnabled) {
     motorEnabled = true;
@@ -174,11 +178,8 @@ void startHoming() {
   }
 
   focuserStepper->stopMove();
-  jogActive = false;
   focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
   focuserStepper->runBackward();
-  homingReturnInProgress = false;
-  homingInProgress = true;
 }
 
 void updateHoming() {
@@ -197,6 +198,8 @@ void updateHoming() {
       homingReturnInProgress = false;
       homingInProgress = false;
       focuserStepper->setSpeedInHz(speedHz);
+      //respond with :HD# to indicate homing complete
+      Serial.println(":HD#");
     }
     return;
   }
@@ -251,7 +254,7 @@ void setSpeedSetting(uint8_t speedSettingIndex) {
     default:
       break;
   }
-  if (focuserStepper != nullptr) {
+  if (focuserStepper != nullptr && !homingInProgress && !jogActive && !homingReturnInProgress) {
     focuserStepper->setSpeedInHz(speedHz);
   }
 }

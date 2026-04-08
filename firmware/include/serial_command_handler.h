@@ -4,19 +4,17 @@
 
 namespace SerialCommandHandler {
 
-using CommandCallback = void (*)(HardwareSerial& serial, const char* command, size_t commandLength);
+using CommandCallback = void (*)(const char* parameters, size_t parametersLength);
 
 void begin(HardwareSerial& serial = Serial);
 void poll();
 
-void handleGetPosition(HardwareSerial& serial, const char* command, size_t commandLength);
-void handleHome(HardwareSerial& serial, const char* command, size_t commandLength);
-void handleGetTarget(HardwareSerial& serial, const char* command, size_t commandLength);
-void handleSetTarget(HardwareSerial& serial, const char* command, size_t commandLength);
-void handleGotoPreset(HardwareSerial& serial, const char* command, size_t commandLength);
-void handleGetPreset(HardwareSerial& serial, const char* command, size_t commandLength);
+void handleGetPosition(const char* parameters, size_t parametersLength);
+void handleHome(const char* parameters, size_t parametersLength);
+void handleGetTarget(const char* parameters, size_t parametersLength);
+void handleSetTarget(const char* parameters, size_t parametersLength);
+void handleGotoPreset(const char* parameters, size_t parametersLength);
+void handleGetPreset(const char* parameters, size_t parametersLength);
 
-// Example command callback declaration:
-// void handleSetPosition(HardwareSerial& serial, const char* command, size_t commandLength);
 
 } // namespace SerialCommandHandler

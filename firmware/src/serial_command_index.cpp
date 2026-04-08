@@ -7,24 +7,44 @@ namespace SerialCommandIndex {
 namespace {
 
 const CommandEntry kCommands[] = {
-  {":GP#", 4, SerialCommandHandler::handleGetPosition},
-  {":HM#", 4, SerialCommandHandler::handleHome},
-  {":TI#", 4, SerialCommandHandler::handleGetTarget},
-
-    // Example command registration:
-  // {":SP#", 4, SerialCommandHandler::handleSetPosition},
+  {":GP", 3, SerialCommandHandler::handleGetPosition},
+  {":HM", 3, SerialCommandHandler::handleHome},
+  {":TI", 3, SerialCommandHandler::handleGetTarget},
+  {":TG", 3, SerialCommandHandler::handleSetTarget},
+  {":PG", 3, SerialCommandHandler::handleGotoPreset},
+  {":PR", 3, SerialCommandHandler::handleGetPreset},
 };
 
 } // namespace
 
-const CommandEntry* find(const char* token, size_t tokenLength) {
+bool dispatch(const char* frame, size_t frameLength) {
+  // Basic frame validation before token matching.
+  if (frame == nullptr || frameLength < 4 || frame[0] != ':' || frame[frameLength - 1] != '#') {
+    return false;
+  }
+
+  // Compare the incoming token against each registered command entry.
   for (const CommandEntry& entry : kCommands) {
-    if (entry.tokenLength == tokenLength &&
-        std::memcmp(entry.token, token, tokenLength) == 0) {
-      return &entry;
+    const size_t tokenLength = entry.tokenLength;
+    if (tokenLength < 2 || frameLength < tokenLength + 1) {
+      continue;
+    }
+
+    if (std::memcmp(entry.token, frame, tokenLength) == 0) {
+      if (entry.callback == nullptr) {
+        return false;
+      }
+
+      // Payload is everything after token and before trailing '#'.
+      const char* parameters = frame + tokenLength;
+      const size_t parametersLength = frameLength - tokenLength - 1;
+      entry.callback(parameters, parametersLength);
+      return true;
     }
   }
-  return nullptr;
+
+  // No token match found in the index.
+  return false;
 }
 
 } // namespace SerialCommandIndex
