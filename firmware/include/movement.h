@@ -18,9 +18,15 @@ void moveToPositionMm(float targetMm);
 int32_t getCurrentPositionSteps();
 void setCurrentPositionSteps(int32_t positionSteps);
 
+void updatePositionPersistence();
+void loadPersistentCurrentPosition();
+void savePersistentCurrentPosition();
+void clearPersistentCurrentPosition();
+
 void startHoming();
 void abortHoming();
 void updateHoming();
+void setSpeedSetting(uint8_t speedSettingIndex);
 
 void updateSoftEndstops();
 bool isBusy();
