@@ -13,5 +13,6 @@ extern long savedPresetPositionSteps;
 long loadPresetPositionById(uint8_t id);
 void gotoPresetPositionById(uint8_t id);
 void initMenu();
+
 uint8_t getFocusSpeedSetting();
 uint8_t getBrightnessSetting();

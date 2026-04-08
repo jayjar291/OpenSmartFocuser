@@ -1,7 +1,5 @@
 #include <Arduino.h>
-#include <limits.h>
 #include <FastAccelStepper.h>
-#include <Preferences.h>
 #include <TMCStepper.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -39,58 +37,9 @@ static void motorTask(void* /*param*/) {
   for (;;) {
     Movement::updateHoming();
     Movement::updateSoftEndstops();
+    Movement::updatePositionPersistence();
     vTaskDelay(pdMS_TO_TICKS(1));
   }
-}
-
-static constexpr const char* kCurrentPositionNamespace = "CurrentPos";
-static constexpr const char* kCurrentPositionKey = "steps";
-static constexpr uint32_t kCurrentPositionSaveIntervalMs = 8000;
-static uint32_t gLastCurrentPositionSaveMs = 0;
-static int32_t gLastSavedCurrentPositionSteps = INT32_MIN;
-
-static void clearPersistentCurrentPosition() {
-  Preferences preferences;
-  if (preferences.begin(kCurrentPositionNamespace, false)) {
-    preferences.remove(kCurrentPositionKey);
-    preferences.end();
-  }
-  gLastSavedCurrentPositionSteps = INT32_MIN;
-}
-
-static int32_t loadPersistentCurrentPosition() {
-  Preferences preferences;
-  int32_t steps = 0;
-  if (preferences.begin(kCurrentPositionNamespace, true)) {
-    steps = preferences.getLong(kCurrentPositionKey, 0);
-    preferences.end();
-  }
-  return steps;
-}
-
-static void savePersistentCurrentPositionIfDue() {
-  if (Movement::isBusy()) {
-    return;
-  }
-
-  const uint32_t nowMs = millis();
-  if (nowMs - gLastCurrentPositionSaveMs < kCurrentPositionSaveIntervalMs) {
-    return;
-  }
-
-  const int32_t currentSteps = Movement::getCurrentPositionSteps();
-  if (currentSteps == gLastSavedCurrentPositionSteps) {
-    gLastCurrentPositionSaveMs = nowMs;
-    return;
-  }
-
-  Preferences preferences;
-  if (preferences.begin(kCurrentPositionNamespace, false)) {
-    preferences.putLong(kCurrentPositionKey, currentSteps);
-    preferences.end();
-    gLastSavedCurrentPositionSteps = currentSteps;
-  }
-  gLastCurrentPositionSaveMs = nowMs;
 }
 
 /*
@@ -105,7 +54,6 @@ void setup() {
   initMenu();
 
   Movement::initializeDriver();
-  Movement::setCurrentPositionSteps(loadPersistentCurrentPosition());
 
   // Core 0 handles motor/homing/endstop tasks. loop() remains on Core 1 for UI/menu.
   BaseType_t taskCreated = xTaskCreatePinnedToCore(
@@ -128,7 +76,6 @@ void setup() {
 void loop() {
   menu.loop();
   SerialCommandHandler::poll();
-  savePersistentCurrentPositionIfDue();
   Movement::setSpeedSetting(getFocusSpeedSetting());
   analogWrite(PIN_LCD_BL, getBrightnessSetting() * 255 / 100);
 }

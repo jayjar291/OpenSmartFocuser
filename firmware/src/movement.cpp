@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <FastAccelStepper.h>
+#include <Preferences.h>
 #include <TMCStepper.h>
 #include "config.h"
 #include "debug_serial.h"
@@ -15,9 +16,14 @@ uint32_t speedHz = SLOW_FOCUS_SPEED_STEPS_PER_SEC;
 
 namespace {
 
+constexpr const char* kCurrentPositionNamespace = "CurrentPos";
+constexpr const char* kCurrentPositionKey = "steps";
+
 volatile bool homingInProgress = false;
 volatile bool homingReturnInProgress = false;
 bool jogActive = false;
+
+bool wasMoving = false;
 
 bool isEndstopTriggered() {
   return digitalRead(PIN_BUTTON_ENDSTOP) == LOW;
@@ -53,6 +59,7 @@ void initializeDriver() {
   focuserStepper->setAcceleration(TMC_MAX_ACCELERATION);
   motorEnabled = false;
   focuserStepper->disableOutputs();
+  loadPersistentCurrentPosition();
 }
 
 
@@ -151,6 +158,50 @@ void setCurrentPositionSteps(int32_t positionSteps) {
   focuserStepper->forceStopAndNewPosition(positionSteps);
 }
 
+void loadPersistentCurrentPosition() {
+  Preferences preferences;
+  int32_t steps = 0;
+  if (preferences.begin(kCurrentPositionNamespace, true)) {
+    steps = preferences.getLong(kCurrentPositionKey, 0);
+    preferences.end();
+  }
+  focuserStepper->forceStopAndNewPosition(steps);
+}
+
+void savePersistentCurrentPosition() {
+  Preferences preferences;
+  if (preferences.begin(kCurrentPositionNamespace, false)) {
+    preferences.putLong(kCurrentPositionKey, getCurrentPositionSteps());
+    preferences.end();
+  }
+}
+
+void updatePositionPersistence() {
+  if (focuserStepper == nullptr) {
+    return;
+  }
+  // Homing has its own explicit completion handling.
+  if (homingInProgress || homingReturnInProgress) {
+    wasMoving = true;
+    return;
+  }
+
+  const bool isRunning = focuserStepper->isRunning();
+  if (wasMoving && !isRunning) {
+    savePersistentCurrentPosition();
+  }
+
+  wasMoving = isRunning;
+}
+
+void clearPersistentCurrentPosition() {
+  Preferences preferences;
+  if (preferences.begin(kCurrentPositionNamespace, false)) {
+    preferences.remove(kCurrentPositionKey);
+    preferences.end();
+  }
+}
+
 void abortHoming() {
   if (focuserStepper != nullptr) {
     focuserStepper->forceStop();
@@ -199,6 +250,7 @@ void updateHoming() {
       homingInProgress = false;
       focuserStepper->setSpeedInHz(speedHz);
       //respond with :HD# to indicate homing complete
+      savePersistentCurrentPosition();
       Serial.println(":HD#");
     }
     return;
@@ -231,7 +283,7 @@ void updateSoftEndstops() {
 }
 
 bool isBusy() {
-  return homingInProgress;
+  return homingInProgress || jogActive || homingReturnInProgress || (focuserStepper != nullptr && focuserStepper->isRunning());
 }
 
 void setSpeedSetting(uint8_t speedSettingIndex) {
