@@ -123,6 +123,7 @@ static char kSettingBrightness[] = "Brightness";
 static char kSettingTmcDriver[] = "TMC Driver";
 static char kSettingMicrosteps[] = "Microsteps";
 static char kSettingSpreadCycle[] = "SpreadCycle";
+const char* speeds[] = {"Fine", "Slow", "Medium", "Fast", "Max"};
 
 static constexpr const char* kCurrentPositionNamespace = "CurrentPos";
 static constexpr const char* kCurrentPositionKey = "steps";
@@ -253,6 +254,7 @@ static void startHomingAction() {
  */
 static void initMenu() {
   // Configure settings
+  settingsScreen.addOptionSetting("Focus Speed", speeds, 5, 1);
   settingsScreen.addBooleanSetting(kSettingWifi, true);
   settingsScreen.addBooleanSetting(kSettingBluetooth, true);
   settingsScreen.addRangeSetting(kSettingBrightness, 0, 100, DEFAULT_BRIGHTNESS, kPercentUnit);
@@ -402,5 +404,6 @@ void loop() {
   menu.loop();
   SerialCommandHandler::poll();
   savePersistentCurrentPositionIfDue();
+  Movement::setSpeedSetting(settingsScreen.getSettingValue("Focus Speed"));
   analogWrite(PIN_LCD_BL, settingsScreen.getSettingValue("Brightness") * 255 / 100);
 }

@@ -11,6 +11,8 @@ extern bool motorEnabled;
 extern HardwareSerial tmcSerial;
 extern FastAccelStepperEngine stepperEngine;
 
+uint32_t speedHz = SLOW_FOCUS_SPEED_STEPS_PER_SEC;
+
 namespace {
 
 volatile bool homingInProgress = false;
@@ -82,7 +84,6 @@ void jogForward() {
     return;
   }
   focuserStepper->enableOutputs();
-  focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
   jogActive = true;
   focuserStepper->runForward();
 }
@@ -96,7 +97,6 @@ void jogBackward() {
     return;
   }
   focuserStepper->enableOutputs();
-  focuserStepper->setSpeedInHz(IDLE_JOG_SPEED_STEPS_PER_SEC);
   jogActive = true;
   focuserStepper->runBackward();
 }
@@ -196,6 +196,7 @@ void updateHoming() {
       DebugSerial::printFramedValue("Homing complete. Position reset to ", FOCUSER_HOMING_RETURN_MM, " mm.");
       homingReturnInProgress = false;
       homingInProgress = false;
+      focuserStepper->setSpeedInHz(speedHz);
     }
     return;
   }
@@ -228,6 +229,31 @@ void updateSoftEndstops() {
 
 bool isBusy() {
   return homingInProgress;
+}
+
+void setSpeedSetting(uint8_t speedSettingIndex) {
+  switch (speedSettingIndex) {
+    case 0:
+      speedHz = FINE_FOCUS_SPEED_STEPS_PER_SEC;
+      break;
+    case 1:
+      speedHz = SLOW_FOCUS_SPEED_STEPS_PER_SEC;
+      break;
+    case 2:
+      speedHz = MEDIUM_FOCUS_SPEED_STEPS_PER_SEC;
+      break;
+    case 3:
+      speedHz = FAST_FOCUS_SPEED_STEPS_PER_SEC;
+      break;
+    case 4:
+      speedHz = MAX_FOCUS_SPEED_STEPS_PER_SEC;
+      break;
+    default:
+      break;
+  }
+  if (focuserStepper != nullptr) {
+    focuserStepper->setSpeedInHz(speedHz);
+  }
 }
 
 } // namespace Movement

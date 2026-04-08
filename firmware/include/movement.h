@@ -21,6 +21,7 @@ void setCurrentPositionSteps(int32_t positionSteps);
 void startHoming();
 void abortHoming();
 void updateHoming();
+void setSpeedSetting(uint8_t speedSettingIndex);
 
 void updateSoftEndstops();
 bool isBusy();

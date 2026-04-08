@@ -7,8 +7,8 @@ namespace SerialCommandIndex {
 namespace {
 
 const CommandEntry kCommands[] = {
-    {":GP#", 4, SerialCommandHandler::handleGetPosition},
-    {":HM#", 4, SerialCommandHandler::handleHome},
+  {":GP#", 4, SerialCommandHandler::handleGetPosition},
+  {":HM#", 4, SerialCommandHandler::handleHome},
   {":TI#", 4, SerialCommandHandler::handleGetTarget},
 
     // Example command registration:
