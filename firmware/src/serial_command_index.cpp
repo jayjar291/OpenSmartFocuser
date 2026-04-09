@@ -13,6 +13,10 @@ const CommandEntry kCommands[] = {
   {":TG", 3, SerialCommandHandler::handleSetTarget},
   {":PG", 3, SerialCommandHandler::handleGotoPreset},
   {":PR", 3, SerialCommandHandler::handleGetPreset},
+  {":PL", 3, SerialCommandHandler::handleListPresets},
+  {":PA", 3, SerialCommandHandler::handleAddPreset},
+  {":PS", 3, SerialCommandHandler::handleSetPreset},
+  {":PC", 3, SerialCommandHandler::handleRemovePreset},
 };
 
 } // namespace

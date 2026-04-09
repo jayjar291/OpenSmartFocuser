@@ -15,6 +15,23 @@ void handleGetTarget(const char* parameters, size_t parametersLength);
 void handleSetTarget(const char* parameters, size_t parametersLength);
 void handleGotoPreset(const char* parameters, size_t parametersLength);
 void handleGetPreset(const char* parameters, size_t parametersLength);
+void handleListPresets(const char* parameters, size_t parametersLength);
+void handleAddPreset(const char* parameters, size_t parametersLength);
+void handleSetPreset(const char* parameters, size_t parametersLength);
+void handleRemovePreset(const char* parameters, size_t parametersLength);
+
+//helpers
+static bool parseAddPresetPayload(
+    const char* parameters,
+    size_t parametersLength,
+    int32_t& outSteps,
+    char* outName,
+    size_t outNameSize);
+
+static bool parseNumberParameter(
+    const char* parameters,
+    size_t parametersLength,
+    int32_t& outNumber);
 
 
 } // namespace SerialCommandHandler

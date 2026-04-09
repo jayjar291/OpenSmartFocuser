@@ -8,6 +8,7 @@
 #include "menu.h"
 #include "movement.h"
 #include "serial_command_handler.h"
+#include "preset.h"
 
 /*
  * Hardware interface constants for TMC2209 UART control.
@@ -54,6 +55,8 @@ void setup() {
   initMenu();
 
   Movement::initializeDriver();
+
+  preset::begin();
 
   // Core 0 handles motor/homing/endstop tasks. loop() remains on Core 1 for UI/menu.
   BaseType_t taskCreated = xTaskCreatePinnedToCore(

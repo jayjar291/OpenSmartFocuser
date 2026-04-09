@@ -32,3 +32,4 @@
 #define PIN_BUTTON_DOWN             36
 #define PIN_BUTTON_SELECT           37
 #define PIN_BUTTON_ENDSTOP          38
+#define PIN_BUTTON_BOOT              0
