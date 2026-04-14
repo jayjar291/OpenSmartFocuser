@@ -7,16 +7,28 @@ namespace SerialCommandIndex {
 namespace {
 
 const CommandEntry kCommands[] = {
-  {":GP", 3, SerialCommandHandler::handleGetPosition},
-  {":HM", 3, SerialCommandHandler::handleHome},
-  {":TI", 3, SerialCommandHandler::handleGetTarget},
-  {":TG", 3, SerialCommandHandler::handleSetTarget},
-  {":PG", 3, SerialCommandHandler::handleGotoPreset},
-  {":PR", 3, SerialCommandHandler::handleGetPreset},
-  {":PL", 3, SerialCommandHandler::handleListPresets},
-  {":PA", 3, SerialCommandHandler::handleAddPreset},
-  {":PS", 3, SerialCommandHandler::handleSetPreset},
-  {":PC", 3, SerialCommandHandler::handleRemovePreset},
+  //:GP# get current position in steps, response :GP<steps>#
+  {":GP", SerialCommandHandler::handleGetPosition},
+  //:HM# start homing sequence, response :ACK#
+  {":HM", SerialCommandHandler::handleHome},
+  //:TI# get DSO target RA, DEC, name, response :TI<RA>,<DEC>,<name>#
+  {":TI", SerialCommandHandler::handleGetTarget},
+  //:TG<RA>,<DEC>,<name># set DSO target RA, DEC, response :ACK#.
+  {":TG", SerialCommandHandler::handleSetTarget},
+  //:TC# clear DSO target, response :ACK#.
+  {":TC", nullptr}, // TODO: implement handleClearTarget
+  //:PG<presetId># goto preset by id, response :ACK#.
+  {":PG", SerialCommandHandler::handleGotoPreset},
+  //:PR<presetId># get preset by id, response :PR<presetId>,<name>,<steps>#.
+  {":PR", SerialCommandHandler::handleGetPreset},
+  //:PL# list presets, response :PL<presetId>,<name>,<steps># ends with :PL!# 
+  {":PL", SerialCommandHandler::handleListPresets},
+  //:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>#. If steps is -1, current position is used.
+  {":PA", SerialCommandHandler::handleAddPreset},
+  //:PS<presetId>,<steps>,<presetName># set preset by id, response :ACK#. If steps is -1, current position is used.
+  {":PS", SerialCommandHandler::handleSetPreset},
+  //:PC<presetId># remove preset by id, response :ACK#.
+  {":PC", SerialCommandHandler::handleRemovePreset},
 };
 
 } // namespace
@@ -29,7 +41,7 @@ bool dispatch(const char* frame, size_t frameLength) {
 
   // Compare the incoming token against each registered command entry.
   for (const CommandEntry& entry : kCommands) {
-    const size_t tokenLength = entry.tokenLength;
+    const size_t tokenLength = std::strlen(entry.token);
     if (tokenLength < 2 || frameLength < tokenLength + 1) {
       continue;
     }

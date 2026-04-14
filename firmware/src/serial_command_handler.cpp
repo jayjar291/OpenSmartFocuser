@@ -2,17 +2,57 @@
 #include "serial_command_index.h"
 #include "movement.h"
 #include "debug_serial.h"
+#include "PayloadParser.h"
 #include "preset.h"
+
+#include <cstring>
 
 namespace SerialCommandHandler {
 
 namespace {
 
 constexpr size_t kMaxCommandLength = 64;
+constexpr size_t kMaxPayloadLength = 64;
+constexpr const char* kResponseAck = ":ACK#";
+constexpr const char* kResponseInvalidArgs = ":ER02#";
+constexpr const char* kResponseError = ":ERR#";
 HardwareSerial* gSerial = nullptr;
 char gCommandBuffer[kMaxCommandLength + 1] = {0};
 size_t gCommandLength = 0;
 bool gCapturing = false;
+
+bool parseArgs(const char* parameters,
+               size_t parametersLength,
+               uint8_t expectedCount,
+               char (&payload)[kMaxPayloadLength],
+               ParsedArgs& outArgs) {
+  if (parameters == nullptr || parametersLength == 0 || parametersLength >= sizeof(payload)) {
+    return false;
+  }
+
+  memcpy(payload, parameters, parametersLength);
+  payload[parametersLength] = '\0';
+
+  outArgs = PayloadParserFixed::parseInPlace(payload);
+  return !outArgs.truncated && outArgs.count == expectedCount;
+}
+
+bool readInt32Arg(const ParsedArgs& args, uint8_t index, int32_t& outValue) {
+  if (index >= args.count) {
+    return false;
+  }
+  return PayloadParserFixed::asInt32(args.args[index], outValue);
+}
+
+bool readNonEmptyStringArg(const ParsedArgs& args, uint8_t index, const char*& outValue) {
+  if (index >= args.count) {
+    return false;
+  }
+  if (!PayloadParserFixed::asString(args.args[index], outValue)) {
+    return false;
+  }
+  return outValue != nullptr && outValue[0] != '\0';
+}
 
 } // namespace
 
@@ -52,7 +92,7 @@ void poll() {
       DebugSerial::printFramed("Received command frame:");
       DebugSerial::printFramed(gCommandBuffer);
       if (!SerialCommandIndex::dispatch(gCommandBuffer, gCommandLength)) {
-        gSerial->println(":ERR#");
+        gSerial->println(kResponseError);
       }
       gCommandLength = 0;
       gCapturing = false;
@@ -71,7 +111,7 @@ void handleGetPosition(const char* parameters, size_t parametersLength) {
 void handleHome(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
-  gSerial->println(":ACK#");
+  gSerial->println(kResponseAck);
   Movement::startHoming();
 }
 
@@ -88,29 +128,44 @@ void handleSetTarget(const char* parameters, size_t parametersLength) {
 }
 
 void handleGotoPreset(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
   int32_t presetId = 0;
-  if (!parseNumberParameter(parameters, parametersLength, presetId)) {
-    gSerial->println(":ERR#");
+  if (!readInt32Arg(args, 0, presetId)) {
+    gSerial->println(kResponseInvalidArgs);
     return;
   }
 
   if (!preset::gotoById(static_cast<uint8_t>(presetId))) {
-    gSerial->println(":ERR#");
+    gSerial->println(kResponseError);
     return;
   }
 
-  gSerial->println(":ACK#");
+  gSerial->println(kResponseAck);
 }
-
+//:PR<presetId># get preset by id, response :PR<presetId>,<name>,<steps>#.
 void handleGetPreset(const char* parameters, size_t parametersLength) {
-  int32_t presetId = 0;
-  if (!parseNumberParameter(parameters, parametersLength, presetId)) {
-    gSerial->println(":ERR#");
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
     return;
   }
+
+  int32_t presetId = 0;
+  if (!readInt32Arg(args, 0, presetId)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
   preset::Preset p{};
   if (!preset::getById(static_cast<uint8_t>(presetId), p)) {
-    gSerial->println(":ERR#");
+    gSerial->println(kResponseError);
     return;
   }
   gSerial->print(":PR");
@@ -121,11 +176,10 @@ void handleGetPreset(const char* parameters, size_t parametersLength) {
   gSerial->print(p.name);
   gSerial->println("#");
 }
-
+//:PL# list presets, response :PL<presetId>,<name>,<steps># ends with :PL!#
 void handleListPresets(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
-  uint8_t count = preset::count();
   preset::Preset p{};
   const uint8_t cap = preset::capacity();
   for (uint8_t i = 0; i < cap; ++i) {
@@ -144,15 +198,29 @@ void handleListPresets(const char* parameters, size_t parametersLength) {
   
   gSerial->println(":PL!#");
 }
-
+//:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>#. If steps is -1, current position is used.
 void handleAddPreset(const char* parameters, size_t parametersLength) {
-  int32_t steps = 0;
-  char name[preset::kMaxNameLen] = {0};
-
-  if (!parseAddPresetPayload(parameters, parametersLength, steps, name, sizeof(name))) {
-    gSerial->println(":ERR#");
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 2, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
     return;
   }
+
+  int32_t steps = 0;
+  const char* parsedName = nullptr;
+  if (!readInt32Arg(args, 0, steps)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  if (!readNonEmptyStringArg(args, 1, parsedName)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  char name[preset::kMaxNameLen] = {0};
+  strncpy(name, parsedName, sizeof(name) - 1);
+  name[sizeof(name) - 1] = '\0';
 
   if (steps == -1) {
     steps = Movement::getCurrentPositionSteps();
@@ -160,7 +228,7 @@ void handleAddPreset(const char* parameters, size_t parametersLength) {
 
   uint8_t newId = 0;
   if (!preset::add(name, steps, newId)) {
-    gSerial->println(":ERR#");
+    gSerial->println(kResponseError);
     return;
   }
 
@@ -170,118 +238,67 @@ void handleAddPreset(const char* parameters, size_t parametersLength) {
   gSerial->print(name);
   gSerial->println("#");
 }
-
+//:PC<presetId># remove preset by id, response :ACK#.
 void handleRemovePreset(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
   int32_t presetId = 0;
-  if (!parseNumberParameter(parameters, parametersLength, presetId)) {
-    gSerial->println(":ERR#");
+  if (!readInt32Arg(args, 0, presetId)) {
+    gSerial->println(kResponseInvalidArgs);
     return;
   }
 
   if (!preset::remove(static_cast<uint8_t>(presetId))) {
-    gSerial->println(":ERR#");
+    gSerial->println(kResponseError);
     return;
   }
-
-  gSerial->println(":ACK#");
+  gSerial->println(kResponseAck);
 }
 
+//:PS<presetId>,<steps>,<presetName># set preset by id, response :ACK#. If steps is -1, current position is used.
 void handleSetPreset(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 3, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
   int32_t presetId = 0;
   int32_t steps = 0;
+  const char* parsedName = nullptr;
+  if (!readInt32Arg(args, 0, presetId)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  if (!readInt32Arg(args, 1, steps)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  if (!readNonEmptyStringArg(args, 2, parsedName)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
   char name[preset::kMaxNameLen] = {0};
-
-  if (!parseAddPresetPayload(parameters, parametersLength, steps, name, sizeof(name))) {
-    gSerial->println(":ERR#");
-    return;
-  }
-
-  if (presetId == -1) {
-    gSerial->println(":ERR#");
-    return;
-  }
+  strncpy(name, parsedName, sizeof(name) - 1);
+  name[sizeof(name) - 1] = '\0';
 
   if (steps == -1) {
     steps = Movement::getCurrentPositionSteps();
   }
 
   if (!preset::set(static_cast<uint8_t>(presetId), name, steps)) {
-    gSerial->println(":ERR#");
+    gSerial->println(kResponseError);
     return;
   }
 
-  gSerial->println(":ACK#");
-}
-
-static bool parseAddPresetPayload(
-    const char* parameters,
-    size_t parametersLength,
-    int32_t& outSteps,
-    char* outName,
-    size_t outNameSize) {
-  if (parameters == nullptr || parametersLength == 0 || outName == nullptr || outNameSize == 0) {
-    return false;
-  }
-
-  // 1) Bound and terminate payload copy.
-  char payload[64];
-  if (parametersLength >= sizeof(payload)) {
-    return false;
-  }
-  memcpy(payload, parameters, parametersLength);
-  payload[parametersLength] = '\0';
-
-  // 2) Split once at comma: "<steps>,<name>"
-  char* comma = strchr(payload, ',');
-  if (comma == nullptr) {
-    return false;
-  }
-  *comma = '\0';
-
-  char* stepsText = payload;
-  char* nameText = comma + 1;
-  if (*stepsText == '\0' || *nameText == '\0') {
-    return false;
-  }
-
-  // Parse steps.
-  char* endPtr = nullptr;
-  long steps = strtol(stepsText, &endPtr, 10);
-  if (endPtr == stepsText || *endPtr != '\0') {
-    return false;
-  }
-
-  // Copy name safely.
-  strncpy(outName, nameText, outNameSize - 1);
-  outName[outNameSize - 1] = '\0';
-
-  outSteps = static_cast<int32_t>(steps);
-  return true;
-}
-
-static bool parseNumberParameter(
-    const char* parameters,
-    size_t parametersLength,
-    int32_t& outNumber) {
-  if (parameters == nullptr || parametersLength == 0) {
-    return false;
-  }
-
-  char buffer[32];
-  if (parametersLength >= sizeof(buffer)) {
-    return false;
-  }
-  memcpy(buffer, parameters, parametersLength);
-  buffer[parametersLength] = '\0';
-
-  char* endPtr = nullptr;
-  long value = strtol(buffer, &endPtr, 10);
-  if (endPtr == buffer || *endPtr != '\0') {
-    return false;
-  }
-
-  outNumber = static_cast<int32_t>(value);
-  return true;
+  gSerial->println(kResponseAck);
 }
 
 } // namespace SerialCommandHandler

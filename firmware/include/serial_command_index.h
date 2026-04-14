@@ -7,7 +7,6 @@ namespace SerialCommandIndex {
 
 struct CommandEntry {
   const char* token;
-  const uint8_t tokenLength;
   SerialCommandHandler::CommandCallback callback;
 };
 
