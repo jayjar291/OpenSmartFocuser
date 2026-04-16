@@ -2,11 +2,12 @@
 
 #include <OpenMenuOS.h>
 #include <FastAccelStepper.h>
-#include <Preferences.h>
+#include <cstring>
 #include <stdio.h>
 #include "config.h"
 #include "lucide28.h"
 #include "movement.h"
+#include "preset.h"
 #include "star_map_renderer.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
@@ -20,6 +21,7 @@ extern int BUTTON_SELECT_PIN;
 extern int prevSelectState;
 extern float idleMapCenterRaDeg;
 extern float idleMapCenterDecDeg;
+void notifyPresetMenuDataChanged();
 
 /*
  * Custom OpenMenuOS screens used as extension points for the focuser UI.
@@ -280,6 +282,19 @@ class PresetScreen : public Screen {
  public:
   explicit PresetScreen(const char *title = "Preset", uint8_t presetId = 0)
     : title_(title), presetId_(presetId) {
+    setNameInternal(title);
+  }
+
+  void configureForAdd(const char* presetName) {
+    mode_ = SaveMode::kAdd;
+    presetId_ = 0;
+    setNameInternal(presetName);
+  }
+
+  void configureForEdit(uint8_t presetId, const char* presetName) {
+    mode_ = SaveMode::kEdit;
+    presetId_ = presetId;
+    setNameInternal(presetName);
   }
 
   void draw() override {
@@ -439,17 +454,50 @@ class PresetScreen : public Screen {
   }
 
  private:
+  enum class SaveMode {
+    kAdd,
+    kEdit
+  };
+
+  void setNameInternal(const char* source) {
+    if (source == nullptr || source[0] == '\0') {
+      strncpy(nameBuffer_, "Preset", sizeof(nameBuffer_) - 1);
+      nameBuffer_[sizeof(nameBuffer_) - 1] = '\0';
+    } else {
+      strncpy(nameBuffer_, source, sizeof(nameBuffer_) - 1);
+      nameBuffer_[sizeof(nameBuffer_) - 1] = '\0';
+    }
+    title_ = nameBuffer_;
+  }
+
   void onSelectShortPress() {
-    // Save the current position as the active preset target.
-    const long currentSteps = static_cast<long>(Movement::getCurrentPositionSteps());
+    const int32_t currentSteps = Movement::getCurrentPositionSteps();
     savedPresetPositionSteps = currentSteps;
 
-    Preferences preferences;
-    if (preferences.begin("Positions", false)) {
-      char key[4];
-      snprintf(key, sizeof(key), "%u", presetId_);
-      preferences.putLong(key, currentSteps);
-      preferences.end();
+    bool saved = false;
+    if (mode_ == SaveMode::kEdit) {
+      saved = preset::set(presetId_, nameBuffer_, currentSteps);
+    } else {
+      uint8_t newId = 0;
+      saved = preset::add(nameBuffer_, currentSteps, newId);
+      if (saved) {
+        presetId_ = newId;
+      }
+    }
+
+    if (saved) {
+      notifyPresetMenuDataChanged();
+      if (mode_ == SaveMode::kAdd) {
+        if (screenManager.canGoBack()) {
+          screenManager.popScreen();
+        }
+        if (screenManager.canGoBack()) {
+          screenManager.popScreen();
+        }
+      } else if (screenManager.canGoBack()) {
+        screenManager.popScreen();
+      }
+      prevSelectState = buttonVoltage;
     }
   }
 
@@ -490,12 +538,219 @@ class PresetScreen : public Screen {
   }
 
   const char *title_;
+  char nameBuffer_[preset::kMaxNameLen] = "Preset";
   uint8_t presetId_;
+  SaveMode mode_ = SaveMode::kAdd;
+};
+
+class DeviceInfoScreen : public Screen {
+ public:
+  explicit DeviceInfoScreen(const char* title = "Device Info")
+      : title_(title) {
+  }
+
+  void draw() override {
+    int screenWidth = canvas.width();
+    int screenHeight = canvas.height();
+    static constexpr int kOuterPadding = 6;
+    static constexpr int kInnerPadding = 5;
+    static constexpr int kColumnGap = 8;
+    static constexpr int kLineHeight = 8;
+    static constexpr int kHeaderHeight = 15;
+    static constexpr int kFooterHeight = 10;
+
+    static constexpr uint16_t kInfoBg = 0x0841;
+    static constexpr uint16_t kInfoPanel = 0x10A2;
+    static constexpr uint16_t kInfoBorder = 0x2965;
+    static constexpr uint16_t kInfoHeader = 0x041A;
+    static constexpr uint16_t kInfoHeaderText = 0xFFFF;
+    static constexpr uint16_t kInfoKey = 0x7D7C;
+    static constexpr uint16_t kInfoValue = 0xEF5D;
+    static constexpr uint16_t kInfoAccentGood = 0x87F0;
+    static constexpr uint16_t kInfoAccentWarn = 0xFD20;
+    static constexpr uint16_t kInfoFooter = 0xBDF7;
+
+    const int panelX = kOuterPadding;
+    const int panelY = kOuterPadding;
+    const int panelW = screenWidth - (kOuterPadding * 2);
+    const int panelH = screenHeight - (kOuterPadding * 2);
+    const int contentTop = panelY + kHeaderHeight + kInnerPadding;
+    const int contentBottom = panelY + panelH - kFooterHeight - kInnerPadding;
+    const int columnWidth = (panelW - (kInnerPadding * 2) - kColumnGap) / 2;
+    const int leftX = panelX + kInnerPadding;
+    const int rightX = leftX + columnWidth + kColumnGap;
+    const int leftValueRightX = leftX + columnWidth - 2;
+    const int rightValueRightX = rightX + columnWidth - 2;
+
+    canvas.fillScreen(kInfoBg);
+    canvas.fillRoundRect(panelX, panelY, panelW, panelH, 5, kInfoPanel);
+    canvas.drawRoundRect(panelX, panelY, panelW, panelH, 5, kInfoBorder);
+    canvas.fillRoundRect(panelX + 1, panelY + 1, panelW - 2, kHeaderHeight, 4, kInfoHeader);
+    canvas.drawFastHLine(leftX, contentTop - 3, panelW - (kInnerPadding * 2), kInfoBorder);
+    canvas.drawFastVLine(leftX + columnWidth + (kColumnGap / 2), contentTop - 1, contentBottom - contentTop + 2, kInfoBorder);
+
+    canvas.setTextFont(1);
+    canvas.setTextSize(1);
+    canvas.setTextColor(kInfoHeaderText, kInfoHeader);
+    canvas.drawCentreString(title_, panelX + (panelW / 2), panelY + 4, 1);
+
+    char valueBuffer[24];
+    int leftY = contentTop;
+    int rightY = contentTop;
+
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "Motor", Movement::isMotorEnabled() ? "ON" : "OFF",
+                     Movement::isMotorEnabled() ? kInfoAccentGood : kInfoAccentWarn);
+    leftY += kLineHeight;
+
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "UART", Movement::isUartConnected() ? "OK" : "FAIL",
+                     Movement::isUartConnected() ? kInfoAccentGood : kInfoAccentWarn);
+    leftY += kLineHeight;
+
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "Busy", Movement::isBusy() ? "YES" : "NO",
+                     Movement::isBusy() ? kInfoAccentWarn : kInfoValue);
+    leftY += kLineHeight;
+
+    snprintf(valueBuffer, sizeof(valueBuffer), "%.2fmm", static_cast<float>(Movement::getCurrentPositionSteps()) / static_cast<float>(FOCUSER_STEPS_PER_MM));
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "Pos", valueBuffer);
+    leftY += kLineHeight;
+
+    char bytesA[12];
+    formatBytesCompact(ESP.getFreeHeap(), bytesA, sizeof(bytesA));
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "Heap Free", bytesA);
+    leftY += kLineHeight;
+
+    formatBytesCompact(ESP.getMinFreeHeap(), bytesA, sizeof(bytesA));
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "Heap Min", bytesA);
+    leftY += kLineHeight;
+
+    formatBytesCompact(ESP.getHeapSize(), bytesA, sizeof(bytesA));
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "Heap Tot", bytesA);
+    leftY += kLineHeight;
+
+    formatBytesCompact(ESP.getMaxAllocHeap(), bytesA, sizeof(bytesA));
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "Heap Max", bytesA);
+    leftY += kLineHeight;
+
+    if (psramFound()) {
+      snprintf(valueBuffer, sizeof(valueBuffer), "ON");
+    } else {
+      snprintf(valueBuffer, sizeof(valueBuffer), "OFF");
+    }
+    drawKeyValueLine(rightX, rightValueRightX, rightY, "PSRAM", valueBuffer,
+                     psramFound() ? kInfoAccentGood : kInfoAccentWarn);
+    rightY += kLineHeight;
+
+    formatBytesCompact(ESP.getFreePsram(), bytesA, sizeof(bytesA));
+    drawKeyValueLine(rightX, rightValueRightX, rightY, "PS Free", bytesA,
+                     psramFound() ? kInfoValue : kInfoAccentWarn);
+    rightY += kLineHeight;
+
+    formatBytesCompact(ESP.getPsramSize(), bytesA, sizeof(bytesA));
+    drawKeyValueLine(rightX, rightValueRightX, rightY, "PS Tot", bytesA,
+                     psramFound() ? kInfoValue : kInfoAccentWarn);
+    rightY += kLineHeight;
+
+    formatBytesCompact(ESP.getMaxAllocPsram(), bytesA, sizeof(bytesA));
+    drawKeyValueLine(rightX, rightValueRightX, rightY, "PS Max", bytesA,
+                     psramFound() ? kInfoValue : kInfoAccentWarn);
+    rightY += kLineHeight;
+
+    snprintf(valueBuffer, sizeof(valueBuffer), "%umA %uuS",
+             static_cast<unsigned>(Movement::getDriverCurrentMa()),
+             static_cast<unsigned>(Movement::getDriverMicrosteps()));
+    drawKeyValueLine(rightX, rightValueRightX, rightY, "Driver", valueBuffer);
+    rightY += kLineHeight;
+
+    snprintf(valueBuffer, sizeof(valueBuffer), "%luMHz", static_cast<unsigned long>(ESP.getCpuFreqMHz()));
+    drawKeyValueLine(rightX, rightValueRightX, rightY, "CPU", valueBuffer);
+    rightY += kLineHeight;
+
+    snprintf(valueBuffer, sizeof(valueBuffer), "%luKB", static_cast<unsigned long>(ESP.getFreeSketchSpace() / 1024UL));
+    drawKeyValueLine(rightX, rightValueRightX, rightY, "Flash Free", valueBuffer);
+    rightY += kLineHeight;
+
+    formatUptime(millis(), valueBuffer, sizeof(valueBuffer));
+    drawKeyValueLine(rightX, rightValueRightX, rightY, "Uptime", valueBuffer);
+
+    canvas.setTextColor(kInfoFooter, kInfoPanel);
+    canvas.drawCentreString("Hold SELECT to go back", panelX + (panelW / 2), panelY + panelH - kFooterHeight, 1);
+  }
+
+  void handleInput() override {
+    static bool selectClicked = false;
+    static bool longPressHandled = false;
+    static unsigned long selectPressTime = 0;
+
+    if (digitalRead(BUTTON_SELECT_PIN) == buttonVoltage) {
+      if (!selectClicked && !longPressHandled) {
+        selectPressTime = millis();
+        selectClicked = true;
+      } else if ((millis() - selectPressTime >= kSelectLongPressMs) && !longPressHandled) {
+        onSelectLongPress();
+        longPressHandled = true;
+      }
+    } else if (digitalRead(BUTTON_SELECT_PIN) == !buttonVoltage) {
+      if (selectClicked) {
+        selectClicked = false;
+        longPressHandled = false;
+      }
+    }
+
+    draw();
+  }
+
+  const char* getTitle() const override {
+    return title_;
+  }
+
+ private:
+  static void formatBytesCompact(uint32_t bytes, char* destination, size_t destinationSize) {
+    if (destination == nullptr || destinationSize == 0) {
+      return;
+    }
+
+    if (bytes >= 1024UL * 1024UL) {
+      snprintf(destination, destinationSize, "%luM", static_cast<unsigned long>(bytes / (1024UL * 1024UL)));
+    } else if (bytes >= 1024UL) {
+      snprintf(destination, destinationSize, "%luK", static_cast<unsigned long>(bytes / 1024UL));
+    } else {
+      snprintf(destination, destinationSize, "%luB", static_cast<unsigned long>(bytes));
+    }
+  }
+
+  static void formatUptime(uint32_t uptimeMs, char* destination, size_t destinationSize) {
+    const uint32_t totalSeconds = uptimeMs / 1000UL;
+    const uint32_t hours = totalSeconds / 3600UL;
+    const uint32_t minutes = (totalSeconds % 3600UL) / 60UL;
+    const uint32_t seconds = totalSeconds % 60UL;
+    snprintf(destination, destinationSize, "%02lu:%02lu:%02lu",
+             static_cast<unsigned long>(hours),
+             static_cast<unsigned long>(minutes),
+             static_cast<unsigned long>(seconds));
+  }
+
+  void drawKeyValueLine(int x, int valueRightX, int y, const char* key, const char* value,
+                        uint16_t valueColor = 0xEF5D) {
+    canvas.setTextColor(0x7D7C, 0x10A2);
+    canvas.drawString(key, x, y, 1);
+    canvas.setTextColor(valueColor, 0x10A2);
+    canvas.drawRightString(value, valueRightX, y, 1);
+  }
+
+  void onSelectLongPress() {
+    if (screenManager.canGoBack()) {
+      screenManager.popScreen();
+    }
+    prevSelectState = buttonVoltage;
+  }
+
+  const char* title_;
 };
 
 /*
  * Global instances that can be attached directly to menu items.
  */
 extern IdleScreen idle;
-extern PresetScreen preset;
+extern PresetScreen presetScreen;
+extern DeviceInfoScreen deviceInfoScreen;
 }

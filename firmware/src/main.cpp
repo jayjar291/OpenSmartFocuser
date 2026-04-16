@@ -54,11 +54,14 @@ void setup() {
 
   initMenu();
 
+  DebugSerial::printFramed("Setup: initializeDriver");
   Movement::initializeDriver();
 
+  DebugSerial::printFramed("Setup: preset begin");
   preset::begin();
 
   // Core 0 handles motor/homing/endstop tasks. loop() remains on Core 1 for UI/menu.
+  DebugSerial::printFramed("Setup: create motor task");
   BaseType_t taskCreated = xTaskCreatePinnedToCore(
       motorTask,
       "motorTask",
@@ -69,7 +72,10 @@ void setup() {
       0);
   if (taskCreated != pdPASS) {
     DebugSerial::printFramed("Failed to start motor task on Core 0");
+    return;
   }
+
+  DebugSerial::printFramed("Setup: done");
 }
 
 /*

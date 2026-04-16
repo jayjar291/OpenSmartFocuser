@@ -5,6 +5,7 @@ namespace MenuStrings {
 extern char kTitleMainMenu[];
 extern char kTitleIdle[];
 extern char kTitlePresets[];
+extern char kTitleDeviceInfo[];
 extern char kTitleTmcSettings[];
 extern char kTitleSettings[];
 
@@ -33,9 +34,14 @@ extern char kPercentUnit[];
 extern char kMicrostepUnit[];
 extern char kButtonsModeLow[];
 extern char kMainMenuPresets[];
+extern char kMainMenuInfo[];
 extern char kMainMenuHome[];
 extern char kMainMenuSettings[];
 extern char kMainMenuToggleMotor[];
+extern char kPresetAdd[];
+extern char kPresetEmpty[];
+extern char kPresetNoNames[];
+extern char kPresetActions[];
 extern char kFilterGoto[];
 extern char kFilterEdit[];
 extern char kFilterClear[];

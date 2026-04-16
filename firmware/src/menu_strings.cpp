@@ -5,6 +5,7 @@ namespace MenuStrings {
 char kTitleMainMenu[] = "Main Menu";
 char kTitleIdle[] = "Idle";
 char kTitlePresets[] = "Presets";
+char kTitleDeviceInfo[] = "Device Info";
 char kTitleTmcSettings[] = "TMC Settings";
 char kTitleSettings[] = "Settings";
 
@@ -33,12 +34,17 @@ char kPercentUnit[] = "%";
 char kMicrostepUnit[] = "uSteps";
 char kButtonsModeLow[] = "LOW";
 char kMainMenuPresets[] = "Presets";
+char kMainMenuInfo[] = "Info";
 char kMainMenuHome[] = "Home";
 char kMainMenuSettings[] = "Settings";
 char kMainMenuToggleMotor[] = "Toggle Motor";
+char kPresetAdd[] = "Add Preset";
+char kPresetEmpty[] = "No Presets";
+char kPresetNoNames[] = "No Names Available";
+char kPresetActions[] = "Preset Actions";
 char kFilterGoto[] = "Goto";
 char kFilterEdit[] = "Edit";
-char kFilterClear[] = "Clear";
+char kFilterClear[] = "Remove";
 char kSettingFocusSpeed[] = "Focus Speed";
 char kSettingWifi[] = "WiFi";
 char kSettingBluetooth[] = "Bluetooth";

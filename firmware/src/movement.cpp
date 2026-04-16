@@ -286,6 +286,24 @@ bool isBusy() {
   return homingInProgress || jogActive || homingReturnInProgress || (focuserStepper != nullptr && focuserStepper->isRunning());
 }
 
+bool isUartConnected() {
+  return focuserStepper != nullptr && focuserDriver.test_connection() == 0;
+}
+
+uint16_t getDriverMicrosteps() {
+  if (focuserStepper == nullptr) {
+    return 0;
+  }
+  return focuserDriver.microsteps();
+}
+
+uint16_t getDriverCurrentMa() {
+  if (focuserStepper == nullptr) {
+    return 0;
+  }
+  return focuserDriver.rms_current();
+}
+
 void setSpeedSetting(uint8_t speedSettingIndex) {
   switch (speedSettingIndex) {
     case 0:

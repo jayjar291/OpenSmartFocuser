@@ -1,41 +1,22 @@
 #include "menu.h"
 
-#include <Preferences.h>
+#include <cstring>
 #include "config.h"
 #include "menu_strings.h"
 #include "movement.h"
+#include "preset.h"
+#include "debug_serial.h"
 
 OpenMenuOS menu(PIN_BUTTON_UP, PIN_BUTTON_DOWN, PIN_BUTTON_SELECT);
 
 MenuScreen mainMenu(MenuStrings::kTitleMainMenu);
 CustomScreens::IdleScreen idleScreen(MenuStrings::kTitleIdle);
+CustomScreens::PresetScreen presetScreen(MenuStrings::kPresetActions);
+CustomScreens::DeviceInfoScreen deviceInfoScreen(MenuStrings::kTitleDeviceInfo);
 MenuScreen PresetsMenu(MenuStrings::kTitlePresets);
+MenuScreen PresetActionsMenu(MenuStrings::kPresetActions);
+MenuScreen AddPresetMenu(MenuStrings::kPresetAdd);
 MenuScreen TestPOS(MenuStrings::kTestPositions);
-MenuScreen FilterMenu1(MenuStrings::kFilterTitle1);
-MenuScreen FilterMenu2(MenuStrings::kFilterTitle2);
-MenuScreen FilterMenu3(MenuStrings::kFilterTitle3);
-MenuScreen FilterMenu4(MenuStrings::kFilterTitle4);
-MenuScreen FilterMenu5(MenuStrings::kFilterTitle5);
-MenuScreen FilterMenu6(MenuStrings::kFilterTitle6);
-MenuScreen FilterMenu7(MenuStrings::kFilterTitle7);
-MenuScreen FilterMenu8(MenuStrings::kFilterTitle8);
-MenuScreen FilterMenu9(MenuStrings::kFilterTitle9);
-MenuScreen FilterMenu10(MenuStrings::kFilterTitle10);
-MenuScreen FilterMenu11(MenuStrings::kFilterTitle11);
-MenuScreen FilterMenu12(MenuStrings::kFilterTitle12);
-
-CustomScreens::PresetScreen PresetEdit1(MenuStrings::kFilterTitle1, 1);
-CustomScreens::PresetScreen PresetEdit2(MenuStrings::kFilterTitle2, 2);
-CustomScreens::PresetScreen PresetEdit3(MenuStrings::kFilterTitle3, 3);
-CustomScreens::PresetScreen PresetEdit4(MenuStrings::kFilterTitle4, 4);
-CustomScreens::PresetScreen PresetEdit5(MenuStrings::kFilterTitle5, 5);
-CustomScreens::PresetScreen PresetEdit6(MenuStrings::kFilterTitle6, 6);
-CustomScreens::PresetScreen PresetEdit7(MenuStrings::kFilterTitle7, 7);
-CustomScreens::PresetScreen PresetEdit8(MenuStrings::kFilterTitle8, 8);
-CustomScreens::PresetScreen PresetEdit9(MenuStrings::kFilterTitle9, 9);
-CustomScreens::PresetScreen PresetEdit10(MenuStrings::kFilterTitle10, 10);
-CustomScreens::PresetScreen PresetEdit11(MenuStrings::kFilterTitle11, 11);
-CustomScreens::PresetScreen PresetEdit12(MenuStrings::kFilterTitle12, 12);
 
 SettingsScreen TMCSettings(MenuStrings::kTitleTmcSettings);
 SettingsScreen settingsScreen(MenuStrings::kTitleSettings);
@@ -44,38 +25,217 @@ long savedPresetPositionSteps = 0;
 
 namespace {
 
-void clearPresetPositionById(uint8_t id) {
-  Preferences preferences;
-  if (preferences.begin("Positions", false)) {
-    char key[4];
-    snprintf(key, sizeof(key), "%u", id);
-    preferences.remove(key);
-    preferences.end();
+constexpr const char* kConfiguredPresetNames[] = PRESET_NAME_OPTIONS;
+constexpr size_t kConfiguredPresetNameCount = sizeof(kConfiguredPresetNames) / sizeof(kConfiguredPresetNames[0]);
+
+static_assert(kConfiguredPresetNameCount > 0, "PRESET_NAME_OPTIONS must contain at least one preset name.");
+static_assert(kConfiguredPresetNameCount <= preset::kMaxPresets,
+              "PRESET_NAME_OPTIONS must not exceed preset::kMaxPresets.");
+
+char gPresetLabelBuffer[preset::kMaxPresets][preset::kMaxNameLen + 8] = {};
+char gPresetActionsTitle[preset::kMaxNameLen + 8] = "Preset";
+
+uint8_t gPresetIdsBySlot[preset::kMaxPresets] = {};
+uint8_t gNameIndexesBySlot[preset::kMaxPresets] = {};
+uint8_t gSelectedPresetId = 0;
+
+void refreshPresetsMenu();
+void refreshAddPresetMenu();
+void openPresetFromSlot(uint8_t slotIndex);
+void addPresetFromNameSlot(uint8_t slotIndex);
+
+#define DECLARE_PRESET_SLOT_CALLBACKS(N)                       \
+  static void openPresetSlot##N() { openPresetFromSlot(N - 1); } \
+  static void addPresetNameSlot##N() { addPresetFromNameSlot(N - 1); }
+
+DECLARE_PRESET_SLOT_CALLBACKS(1)
+DECLARE_PRESET_SLOT_CALLBACKS(2)
+DECLARE_PRESET_SLOT_CALLBACKS(3)
+DECLARE_PRESET_SLOT_CALLBACKS(4)
+DECLARE_PRESET_SLOT_CALLBACKS(5)
+DECLARE_PRESET_SLOT_CALLBACKS(6)
+DECLARE_PRESET_SLOT_CALLBACKS(7)
+DECLARE_PRESET_SLOT_CALLBACKS(8)
+DECLARE_PRESET_SLOT_CALLBACKS(9)
+DECLARE_PRESET_SLOT_CALLBACKS(10)
+DECLARE_PRESET_SLOT_CALLBACKS(11)
+DECLARE_PRESET_SLOT_CALLBACKS(12)
+
+#undef DECLARE_PRESET_SLOT_CALLBACKS
+
+constexpr ActionCallback kOpenPresetSlotCallbacks[preset::kMaxPresets] = {
+    openPresetSlot1, openPresetSlot2, openPresetSlot3, openPresetSlot4,
+    openPresetSlot5, openPresetSlot6, openPresetSlot7, openPresetSlot8,
+    openPresetSlot9, openPresetSlot10, openPresetSlot11, openPresetSlot12};
+
+constexpr ActionCallback kAddPresetNameSlotCallbacks[preset::kMaxPresets] = {
+    addPresetNameSlot1, addPresetNameSlot2, addPresetNameSlot3, addPresetNameSlot4,
+    addPresetNameSlot5, addPresetNameSlot6, addPresetNameSlot7, addPresetNameSlot8,
+    addPresetNameSlot9, addPresetNameSlot10, addPresetNameSlot11, addPresetNameSlot12};
+
+bool isConfiguredNameInUse(const char* name) {
+  if (name == nullptr || name[0] == '\0') {
+    return false;
+  }
+
+  preset::Preset current{};
+  for (uint8_t i = 0; i < preset::capacity(); ++i) {
+    if (!preset::getByIndex(i, current) || !current.used) {
+      continue;
+    }
+    if (strcmp(current.name, name) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void gotoSelectedPresetAction() {
+  if (gSelectedPresetId == 0) {
+    return;
+  }
+  (void)preset::gotoById(gSelectedPresetId);
+}
+
+void editSelectedPresetAction() {
+  if (gSelectedPresetId == 0) {
+    return;
+  }
+
+  preset::Preset current{};
+  if (!preset::getById(gSelectedPresetId, current)) {
+    return;
+  }
+
+  presetScreen.configureForEdit(current.id, current.name);
+  screenManager.pushScreen(&presetScreen);
+}
+
+void removeSelectedPresetAction() {
+  if (gSelectedPresetId == 0) {
+    return;
+  }
+
+  if (preset::remove(gSelectedPresetId)) {
+    gSelectedPresetId = 0;
+    refreshPresetsMenu();
+    if (screenManager.canGoBack()) {
+      screenManager.popScreen();
+    }
   }
 }
 
-#define DECLARE_FILTER_CALLBACKS(N)         \
-  static void gotoFilter##N() {             \
-    gotoPresetPositionById(N);              \
-  }                                         \
-  static void clearFilter##N() {            \
-    clearPresetPositionById(N);             \
+void refreshPresetActionsMenu() {
+  PresetActionsMenu.items.clear();
+  PresetActionsMenu.currentItemIndex = 0;
+
+  preset::Preset current{};
+  if (!preset::getById(gSelectedPresetId, current)) {
+    PresetActionsMenu.title = MenuStrings::kPresetActions;
+    PresetActionsMenu.addItem(MenuStrings::kPresetEmpty);
+    return;
   }
 
-DECLARE_FILTER_CALLBACKS(1)
-DECLARE_FILTER_CALLBACKS(2)
-DECLARE_FILTER_CALLBACKS(3)
-DECLARE_FILTER_CALLBACKS(4)
-DECLARE_FILTER_CALLBACKS(5)
-DECLARE_FILTER_CALLBACKS(6)
-DECLARE_FILTER_CALLBACKS(7)
-DECLARE_FILTER_CALLBACKS(8)
-DECLARE_FILTER_CALLBACKS(9)
-DECLARE_FILTER_CALLBACKS(10)
-DECLARE_FILTER_CALLBACKS(11)
-DECLARE_FILTER_CALLBACKS(12)
+  snprintf(gPresetActionsTitle, sizeof(gPresetActionsTitle), "%s", current.name);
+  PresetActionsMenu.title = gPresetActionsTitle;
+  PresetActionsMenu.addItem(MenuStrings::kFilterGoto, nullptr, gotoSelectedPresetAction);
+  PresetActionsMenu.addItem(MenuStrings::kFilterEdit, nullptr, editSelectedPresetAction);
+  PresetActionsMenu.addItem(MenuStrings::kFilterClear, nullptr, removeSelectedPresetAction);
+}
 
-#undef DECLARE_FILTER_CALLBACKS
+void openPresetFromSlot(uint8_t slotIndex) {
+  if (slotIndex >= preset::kMaxPresets) {
+    return;
+  }
+
+  const uint8_t presetId = gPresetIdsBySlot[slotIndex];
+  if (presetId == 0) {
+    return;
+  }
+
+  gSelectedPresetId = presetId;
+  refreshPresetActionsMenu();
+  screenManager.pushScreen(&PresetActionsMenu);
+}
+
+void addPresetFromNameSlot(uint8_t slotIndex) {
+  if (slotIndex >= preset::kMaxPresets) {
+    return;
+  }
+
+  const uint8_t nameIndex = gNameIndexesBySlot[slotIndex];
+  if (nameIndex >= kConfiguredPresetNameCount) {
+    return;
+  }
+
+  const char* name = kConfiguredPresetNames[nameIndex];
+  presetScreen.configureForAdd(name);
+  screenManager.pushScreen(&presetScreen);
+}
+
+void refreshAddPresetMenu() {
+  AddPresetMenu.items.clear();
+  AddPresetMenu.currentItemIndex = 0;
+  memset(gNameIndexesBySlot, 0, sizeof(gNameIndexesBySlot));
+
+  uint8_t slotCount = 0;
+  for (uint8_t i = 0; i < kConfiguredPresetNameCount; ++i) {
+    if (isConfiguredNameInUse(kConfiguredPresetNames[i])) {
+      continue;
+    }
+    if (slotCount >= preset::kMaxPresets) {
+      break;
+    }
+
+    gNameIndexesBySlot[slotCount] = i;
+    AddPresetMenu.addItem(kConfiguredPresetNames[i], nullptr, kAddPresetNameSlotCallbacks[slotCount]);
+    ++slotCount;
+  }
+
+  if (slotCount == 0) {
+    AddPresetMenu.addItem(MenuStrings::kPresetNoNames);
+  }
+}
+
+void openAddPresetMenu() {
+  refreshAddPresetMenu();
+  screenManager.pushScreen(&AddPresetMenu);
+}
+
+void refreshPresetsMenu() {
+  PresetsMenu.items.clear();
+  PresetsMenu.currentItemIndex = 0;
+  memset(gPresetIdsBySlot, 0, sizeof(gPresetIdsBySlot));
+
+  PresetsMenu.addItem(MenuStrings::kPresetAdd, nullptr, openAddPresetMenu);
+
+  uint8_t slotCount = 0;
+  preset::Preset current{};
+  for (uint8_t i = 0; i < preset::capacity(); ++i) {
+    if (!preset::getByIndex(i, current) || !current.used) {
+      continue;
+    }
+    if (slotCount >= preset::kMaxPresets) {
+      break;
+    }
+
+    gPresetIdsBySlot[slotCount] = current.id;
+    snprintf(gPresetLabelBuffer[slotCount], sizeof(gPresetLabelBuffer[slotCount]), "%u: %s", current.id, current.name);
+    PresetsMenu.addItem(gPresetLabelBuffer[slotCount], nullptr, kOpenPresetSlotCallbacks[slotCount]);
+    ++slotCount;
+  }
+
+  if (slotCount == 0) {
+    PresetsMenu.addItem(MenuStrings::kPresetEmpty);
+  }
+
+  PresetsMenu.addItem(MenuStrings::kTestPositions, &TestPOS);
+}
+
+void openPresetsMenuAction() {
+  refreshPresetsMenu();
+  screenManager.pushScreen(&PresetsMenu);
+}
 
 void toggleMotorEnabledAction() {
   if (Movement::isBusy()) {
@@ -92,16 +252,17 @@ void startHomingAction() {
 
 } // namespace
 
+void notifyPresetMenuDataChanged() {
+  refreshPresetsMenu();
+  refreshAddPresetMenu();
+}
+
 long loadPresetPositionById(uint8_t id) {
-  Preferences preferences;
-  long steps = 0;
-  if (preferences.begin("Positions", true)) {
-    char key[4];
-    snprintf(key, sizeof(key), "%u", id);
-    steps = preferences.getLong(key, 0);
-    preferences.end();
+  preset::Preset current{};
+  if (!preset::getById(id, current)) {
+    return 0;
   }
-  return steps;
+  return current.steps;
 }
 
 void gotoPresetPositionById(uint8_t id) {
@@ -109,10 +270,11 @@ void gotoPresetPositionById(uint8_t id) {
     Movement::toggleMotorEnabled();
   }
   savedPresetPositionSteps = loadPresetPositionById(id);
-  Movement::moveToPosition(savedPresetPositionSteps);
+  (void)preset::gotoById(id);
 }
 
 void initMenu() {
+  DebugSerial::printFramed("initMenu: settings");
 
   settingsScreen.addOptionSetting(MenuStrings::kSettingFocusSpeed, MenuStrings::speeds, 5, 1);
   settingsScreen.addBooleanSetting(MenuStrings::kSettingWifi, true);
@@ -120,23 +282,11 @@ void initMenu() {
   settingsScreen.addRangeSetting(MenuStrings::kSettingBrightness, 0, 100, DEFAULT_BRIGHTNESS, MenuStrings::kPercentUnit);
   settingsScreen.addSubscreenSetting(MenuStrings::kSettingTmcDriver, &TMCSettings);
 
+  DebugSerial::printFramed("initMenu: tmc settings");
   TMCSettings.addRangeSetting(MenuStrings::kSettingMicrosteps, 1, 255, TMC_MICROSTEPS, MenuStrings::kMicrostepUnit);
   TMCSettings.addBooleanSetting(MenuStrings::kSettingSpreadCycle, TMC_SPREAD_CYCLE);
 
-  PresetsMenu.addItem(MenuStrings::kFilterTitle1, &FilterMenu1);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle2, &FilterMenu2);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle3, &FilterMenu3);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle4, &FilterMenu4);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle5, &FilterMenu5);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle6, &FilterMenu6);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle7, &FilterMenu7);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle8, &FilterMenu8);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle9, &FilterMenu9);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle10, &FilterMenu10);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle11, &FilterMenu11);
-  PresetsMenu.addItem(MenuStrings::kFilterTitle12, &FilterMenu12);
-  PresetsMenu.addItem(MenuStrings::kTestPositions, &TestPOS);
-
+  DebugSerial::printFramed("initMenu: test menu");
   TestPOS.addItem(MenuStrings::kPos0mm, nullptr, []() { Movement::moveToPositionMm(0); });
   TestPOS.addItem(MenuStrings::kPos5mm, nullptr, []() { Movement::moveToPositionMm(5); });
   TestPOS.addItem(MenuStrings::kPos10mm, nullptr, []() { Movement::moveToPositionMm(10); });
@@ -144,59 +294,17 @@ void initMenu() {
   TestPOS.addItem(MenuStrings::kPos50mm, nullptr, []() { Movement::moveToPositionMm(50); });
   TestPOS.addItem(MenuStrings::kPos55mm, nullptr, []() { Movement::moveToPositionMm(55); });
 
-  FilterMenu1.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter1);
-  FilterMenu1.addItem(MenuStrings::kFilterEdit, &PresetEdit1);
-  FilterMenu1.addItem(MenuStrings::kFilterClear, nullptr, clearFilter1);
+  DebugSerial::printFramed("initMenu: presets");
+  refreshPresetsMenu();
 
-  FilterMenu2.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter2);
-  FilterMenu2.addItem(MenuStrings::kFilterEdit, &PresetEdit2);
-  FilterMenu2.addItem(MenuStrings::kFilterClear, nullptr, clearFilter2);
-
-  FilterMenu3.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter3);
-  FilterMenu3.addItem(MenuStrings::kFilterEdit, &PresetEdit3);
-  FilterMenu3.addItem(MenuStrings::kFilterClear, nullptr, clearFilter3);
-
-  FilterMenu4.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter4);
-  FilterMenu4.addItem(MenuStrings::kFilterEdit, &PresetEdit4);
-  FilterMenu4.addItem(MenuStrings::kFilterClear, nullptr, clearFilter4);
-
-  FilterMenu5.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter5);
-  FilterMenu5.addItem(MenuStrings::kFilterEdit, &PresetEdit5);
-  FilterMenu5.addItem(MenuStrings::kFilterClear, nullptr, clearFilter5);
-
-  FilterMenu6.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter6);
-  FilterMenu6.addItem(MenuStrings::kFilterEdit, &PresetEdit6);
-  FilterMenu6.addItem(MenuStrings::kFilterClear, nullptr, clearFilter6);
-
-  FilterMenu7.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter7);
-  FilterMenu7.addItem(MenuStrings::kFilterEdit, &PresetEdit7);
-  FilterMenu7.addItem(MenuStrings::kFilterClear, nullptr, clearFilter7);
-
-  FilterMenu8.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter8);
-  FilterMenu8.addItem(MenuStrings::kFilterEdit, &PresetEdit8);
-  FilterMenu8.addItem(MenuStrings::kFilterClear, nullptr, clearFilter8);
-
-  FilterMenu9.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter9);
-  FilterMenu9.addItem(MenuStrings::kFilterEdit, &PresetEdit9);
-  FilterMenu9.addItem(MenuStrings::kFilterClear, nullptr, clearFilter9);
-
-  FilterMenu10.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter10);
-  FilterMenu10.addItem(MenuStrings::kFilterEdit, &PresetEdit10);
-  FilterMenu10.addItem(MenuStrings::kFilterClear, nullptr, clearFilter10);
-
-  FilterMenu11.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter11);
-  FilterMenu11.addItem(MenuStrings::kFilterEdit, &PresetEdit11);
-  FilterMenu11.addItem(MenuStrings::kFilterClear, nullptr, clearFilter11);
-
-  FilterMenu12.addItem(MenuStrings::kFilterGoto, nullptr, gotoFilter12);
-  FilterMenu12.addItem(MenuStrings::kFilterEdit, &PresetEdit12);
-  FilterMenu12.addItem(MenuStrings::kFilterClear, nullptr, clearFilter12);
-
-  mainMenu.addItem(MenuStrings::kMainMenuPresets, &PresetsMenu);
+  DebugSerial::printFramed("initMenu: main menu items");
+  mainMenu.addItem(MenuStrings::kMainMenuPresets, nullptr, openPresetsMenuAction);
+  mainMenu.addItem(MenuStrings::kMainMenuInfo, &deviceInfoScreen);
   mainMenu.addItem(MenuStrings::kMainMenuHome, nullptr, startHomingAction);
   mainMenu.addItem(MenuStrings::kMainMenuSettings, &settingsScreen);
   mainMenu.addItem(MenuStrings::kMainMenuToggleMotor, nullptr, toggleMotorEnabledAction);
 
+  DebugSerial::printFramed("initMenu: style");
   menu.setMenuStyle(1);
   menu.setScrollbar(true);
   menu.setScrollbarColor(MENU_COLOR_SCROLLBAR);
@@ -207,7 +315,15 @@ void initMenu() {
   menu.setDisplayRotation(1);
   menu.setButtonsMode(MenuStrings::kButtonsModeLow);
 
+  DebugSerial::printFramed("initMenu: tft alloc mode");
+#if TFT_DISABLE_PSRAM_ALLOCATIONS
+  tft.setAttribute(PSRAM_ENABLE, 0);
+  canvas.setAttribute(PSRAM_ENABLE, 0);
+#endif
+
+  DebugSerial::printFramed("initMenu: begin");
   menu.begin(&idleScreen);
+  DebugSerial::printFramed("initMenu: done");
 }
 
 uint8_t getFocusSpeedSetting() {

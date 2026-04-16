@@ -30,5 +30,8 @@ void setSpeedSetting(uint8_t speedSettingIndex);
 
 void updateSoftEndstops();
 bool isBusy();
+bool isUartConnected();
+uint16_t getDriverMicrosteps();
+uint16_t getDriverCurrentMa();
 
 } // namespace Movement

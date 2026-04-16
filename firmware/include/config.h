@@ -27,7 +27,7 @@
  * Enables framed debug text output on Serial as !{message}*.
  * Protocol responses remain unchanged.
  */
-#define SERIAL_DEBUG_ENABLED false
+#define SERIAL_DEBUG_ENABLED true
 
 /*
  * TMC2209 electrical and mode settings used during driver initialization.
@@ -56,6 +56,31 @@
  * User-facing device defaults used by the menu/UI layer.
  */
 #define DEFAULT_BRIGHTNESS 75
+
+/*
+ * Enables PSRAM initialization during startup when hardware supports it.
+ * Set to true to attempt PSRAM init, false to skip.
+ */
+#define ENABLE_PSRAM true
+
+/*
+ * Hard-coded preset names exposed in the menu when adding a new preset.
+ * Keep this list at or below preset::kMaxPresets entries.
+ */
+#define PRESET_NAME_OPTIONS { \
+	"Fine Focus",              \
+	"Clear",              \
+	"Dark",              \
+	"Red",              \
+	"Green",              \
+	"Blue",              \
+	"Luminance",              \
+	"Ha",              \
+	"O-III",              \
+	"S-II",             \
+	"UV",             \
+	"IR"              \
+}
 
 /*
  * Idle star-map center (J2000-like sky coordinates, degrees).
