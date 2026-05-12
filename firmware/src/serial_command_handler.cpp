@@ -127,6 +127,12 @@ void handleSetTarget(const char* parameters, size_t parametersLength) {
   gSerial->println(":TODO#");
 }
 
+void handleClearTarget(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+
 void handleGotoPreset(const char* parameters, size_t parametersLength) {
   char payload[kMaxPayloadLength] = {0};
   ParsedArgs args;
@@ -307,7 +313,8 @@ void handleGetCurrent(const char* parameters, size_t parametersLength) {
   (void)parametersLength;
   gSerial->print(":CI");
   gSerial->print(Movement::getDriverCurrentMa());
-  gSerial->println("#");}
+  gSerial->println("#");
+}
 
 //:CU# get microstep setting, response :CU<currentMa>#.
 void handleGetMicrosteps(const char* parameters, size_t parametersLength) {

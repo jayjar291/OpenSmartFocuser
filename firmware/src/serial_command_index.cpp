@@ -7,16 +7,32 @@ namespace SerialCommandIndex {
 namespace {
 
 const CommandEntry kCommands[] = {
+  //--------------------------------------------------------------status commands below------------------------------------------------------
   //:GP# get current position in steps, response :GP<steps>#
   {":GP", SerialCommandHandler::handleGetPosition},
+  //:GM# get current movement state, response :GM<state># where state is IDLE, MOVING, or HOMING.
+  {":GM", nullptr}, // Not implemented yet.
+  //:GH# get homing state, response :GH<state># where state is NOT_HOMED, HOMING_IN_PROGRESS, or HOMED.
+  {":GH", nullptr}, // Not implemented yet.
+  //:GS# get current speed setting, response :GS<speed># where speed is 1-5.
+  {":GS", nullptr}, // Not implemented yet.
+  //:SP<position># override current position in steps, response :ACK#.
+  {":SP", nullptr}, // Not implemented yet.
+  //:VF# get firmware version, response :VF<version>#.
+  {":VF", nullptr}, // Not implemented yet.
+  //:PP# heartbeat command, response :PP#.
+  {":PP", nullptr}, // Not implemented yet.
+  //--------------------------------------------------------------homing commands below------------------------------------------------------
   //:HM# start homing sequence, response :ACK#
   {":HM", SerialCommandHandler::handleHome},
+  //--------------------------------------------------------------starmap target commands below------------------------------------------------------
   //:TI# get DSO target RA, DEC, name, response :TI<RA>,<DEC>,<name>#
   {":TI", SerialCommandHandler::handleGetTarget},
   //:TG<RA>,<DEC>,<name># set DSO target RA, DEC, response :ACK#.
   {":TG", SerialCommandHandler::handleSetTarget},
   //:TC# clear DSO target, response :ACK#.
-  {":TC", nullptr}, // TODO: implement handleClearTarget
+  {":TC", SerialCommandHandler::handleClearTarget},
+  //--------------------------------------------------------------preset commands below------------------------------------------------------
   //:PG<presetId># goto preset by id, response :ACK#.
   {":PG", SerialCommandHandler::handleGotoPreset},
   //:PR<presetId># get preset by id, response :PR<presetId>,<name>,<steps>#.
@@ -29,10 +45,22 @@ const CommandEntry kCommands[] = {
   {":PS", SerialCommandHandler::handleSetPreset},
   //:PC<presetId># remove preset by id, response :ACK#.
   {":PC", SerialCommandHandler::handleRemovePreset},
+  //--------------------------------------------------------------config commands below------------------------------------------------------
   //:CI# get motor current in mA, response :CI<currentMa>#.
   {":CI", SerialCommandHandler::handleGetCurrent},
   //:CU# get microstep setting, response :CU<currentMa>#.
-  {":CU", SerialCommandHandler::handleGetMicrosteps}, // TODO: implement handleGetMicrosteps
+  {":CU", SerialCommandHandler::handleGetMicrosteps}, 
+  //--------------------------------------------------------------movement commands below------------------------------------------------------
+  //:MA<positionSteps># move to absolute position in steps, response :ACK#.
+  {":MA", nullptr}, // Not implemented yet.
+  //:MR<relativeSteps># move relative number of steps, response :ACK#.
+  {":MR", nullptr}, // Not implemented yet.
+  //:MH# stop motion immediately, response :ACK#.
+  {":MH", nullptr}, // Not implemented yet.
+  //:MS<speed 1-5># set movement speed, response :ACK#.
+  {":MS", nullptr}, // Not implemented yet.
+  //--------------------------------------------------------------addon commands below------------------------------------------------------
+  // TODO addon commands for sensors, auxiliary outputs, etc.
 };
 
 } // namespace
