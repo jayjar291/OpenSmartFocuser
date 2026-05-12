@@ -1,8 +1,8 @@
+cmake_minimum_required(VERSION 3.10)
+
 # OpenSmartFocuser INDI driver scaffold
 # Placeholder-only project skeleton based on INDI project setup docs.
-
 project(indi-opensmartfocuser-focuser C CXX)
-cmake_minimum_required(VERSION 2.8)
 
 include(GNUInstallDirs)
 

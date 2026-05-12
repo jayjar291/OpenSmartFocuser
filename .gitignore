@@ -1,0 +1,65 @@
+# CMake build directories (INDI driver)
+/drivers/indi/build/
+/drivers/indi/cmake_build_debug/
+/drivers/indi/cmake_build_release/
+
+# Generated INDI driver files (not firmware config.h)
+/drivers/indi/config.h
+/drivers/indi/*.xml
+/drivers/indi/CMakeFiles/
+/drivers/indi/CMakeCache.txt
+/drivers/indi/cmake_install.cmake
+/drivers/indi/Makefile
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.exe
+*.dll
+*.dylib
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# PlatformIO
+.pio
+.pioinc/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Dependencies and libraries (if locally installed)
+install_manifest.txt
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Node modules (if applicable)
+node_modules/

@@ -1,0 +1,24 @@
+# CMake build directory
+build/
+
+# Generated files from CMake
+config.h
+indi_opensmartfocuser_focuser.xml
+
+# Build artifacts
+*.o
+*.a
+*.so
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Install manifest
+install_manifest.txt
