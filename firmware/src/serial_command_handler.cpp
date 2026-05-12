@@ -55,13 +55,14 @@ bool readNonEmptyStringArg(const ParsedArgs& args, uint8_t index, const char*& o
 }
 
 } // namespace
-
+//
 void begin(HardwareSerial& serial) {
   gSerial = &serial;
   gCommandLength = 0;
   gCapturing = false;
 }
 
+// This should be called frequently in the main loop to process incoming serial data.
 void poll() {
   // Guard against use before begin().
   if (gSerial == nullptr) {
@@ -100,6 +101,44 @@ void poll() {
   }
 }
 
+//------------------------------------------------------status commands below------------------------------------------------------
+
+//:PP# heartbeat, response :PP#.
+void handleHeartbeat(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":PP#");
+}
+
+//:FV# get firmware version, response :FV<versionString>#.
+void handleGetFirmwareVersion(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+
+//:GM# get movement status, response :GM<statusString>#.
+void handleGetMovement(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+
+//:GH# get homing status, response :GH<statusString>#.
+void handleGetHoming(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+
+//:GS# get current speed setting, response :GS<speed># where speed is 1-5.
+void handleGetSpeed(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+
+//:GP# get current position in steps, response :GP<positionSteps>#.
 void handleGetPosition(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
@@ -108,12 +147,24 @@ void handleGetPosition(const char* parameters, size_t parametersLength) {
   gSerial->println("#");
 }
 
+//:SP<positionSteps># override current position in steps, response :ACK#.
+void handleSetPosition(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+
+//-----------------------------------------------------------homing command below------------------------------------------------------
+
+//:GH# home, response :ACK#.
 void handleHome(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
   gSerial->println(kResponseAck);
   Movement::startHoming();
 }
+
+//-----------------------------------------------starmap target commands below------------------------------------------------------
 
 void handleGetTarget(const char* parameters, size_t parametersLength) {
   (void)parameters;
@@ -133,6 +184,9 @@ void handleClearTarget(const char* parameters, size_t parametersLength) {
   gSerial->println(":TODO#");
 }
 
+//----------------------------------------------preset commands below------------------------------------------------------
+
+//:PG<presetId># goto preset by id, response :ACK#.
 void handleGotoPreset(const char* parameters, size_t parametersLength) {
   char payload[kMaxPayloadLength] = {0};
   ParsedArgs args;
@@ -154,6 +208,7 @@ void handleGotoPreset(const char* parameters, size_t parametersLength) {
 
   gSerial->println(kResponseAck);
 }
+
 //:PR<presetId># get preset by id, response :PR<presetId>,<name>,<steps>#.
 void handleGetPreset(const char* parameters, size_t parametersLength) {
   char payload[kMaxPayloadLength] = {0};
@@ -182,6 +237,7 @@ void handleGetPreset(const char* parameters, size_t parametersLength) {
   gSerial->print(p.name);
   gSerial->println("#");
 }
+
 //:PL# list presets, response :PL<presetId>,<name>,<steps># ends with :PL!#
 void handleListPresets(const char* parameters, size_t parametersLength) {
   (void)parameters;
@@ -204,6 +260,7 @@ void handleListPresets(const char* parameters, size_t parametersLength) {
   
   gSerial->println(":PL!#");
 }
+
 //:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>#. If steps is -1, current position is used.
 void handleAddPreset(const char* parameters, size_t parametersLength) {
   char payload[kMaxPayloadLength] = {0};
@@ -244,6 +301,7 @@ void handleAddPreset(const char* parameters, size_t parametersLength) {
   gSerial->print(name);
   gSerial->println("#");
 }
+
 //:PC<presetId># remove preset by id, response :ACK#.
 void handleRemovePreset(const char* parameters, size_t parametersLength) {
   char payload[kMaxPayloadLength] = {0};
@@ -307,6 +365,8 @@ void handleSetPreset(const char* parameters, size_t parametersLength) {
   gSerial->println(kResponseAck);
 }
 
+//--------------------------------------------------------------config commands below------------------------------------------------------
+
 //:CI# get motor current in mA, response :CI<currentMa>#.
 void handleGetCurrent(const char* parameters, size_t parametersLength) {
   (void)parameters;
@@ -322,6 +382,35 @@ void handleGetMicrosteps(const char* parameters, size_t parametersLength) {
   (void)parametersLength;
   gSerial->print(":CU");
   gSerial->print(Movement::getDriverMicrosteps());
-  gSerial->println("#");}
+  gSerial->println("#");
+}
+
+//movement commands below are not implemented yet, just placeholders for future implementation. They will all respond with :TODO# for now.
+
+//:MA<positionSteps># move to absolute position in steps, response :ACK#.
+void handleMoveAbsolute(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+//:MR<relativeSteps># move relative number of steps, response :ACK#.
+void handleMoveRelative(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+//:MH# stop motion immediately, response :ACK#.
+void handleHalt(const char* parameters, size_t parametersLength) {  
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+//:MS<speed 1-5># set movement speed, response :ACK#.
+void handleSetSpeed(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(":TODO#");
+}
+
 
 } // namespace SerialCommandHandler

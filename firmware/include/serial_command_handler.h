@@ -22,5 +22,15 @@ void handleSetPreset(const char* parameters, size_t parametersLength);
 void handleRemovePreset(const char* parameters, size_t parametersLength);
 void handleGetCurrent(const char* parameters, size_t parametersLength);
 void handleGetMicrosteps(const char* parameters, size_t parametersLength);
+void handleGetMovement(const char* parameters, size_t parametersLength);
+void handleGetHoming(const char* parameters, size_t parametersLength);
+void handleGetSpeed(const char* parameters, size_t parametersLength);
+void handleSetPosition(const char* parameters, size_t parametersLength);
+void handleGetFirmwareVersion(const char* parameters, size_t parametersLength);
+void handleHeartbeat(const char* parameters, size_t parametersLength);
+void handleMoveAbsolute(const char* parameters, size_t parametersLength);
+void handleMoveRelative(const char* parameters, size_t parametersLength);
+void handleHalt(const char* parameters, size_t parametersLength);
+void handleSetSpeed(const char* parameters, size_t parametersLength);
 
 } // namespace SerialCommandHandler
