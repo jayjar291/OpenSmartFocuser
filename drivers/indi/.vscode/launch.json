@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug INDI Driver",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/drivers/indi/build/indiserver/indiserver",
+      "args": [
+        "-v",
+        "${workspaceFolder}/drivers/indi/build/indi_opensmartfocuser_focuser"
+      ],
+      "postDebugTask": "Kill indiserver",
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/drivers/indi",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Set Disassembly Flavor to Intel",
+          "text": "-gdb-set disassembly-flavor intel",
+          "ignoreFailures": true
+        },
+        {
+          "text": "-gdb-set follow-fork-mode child"
+        }
+      ]
+    }
+  ]
+}

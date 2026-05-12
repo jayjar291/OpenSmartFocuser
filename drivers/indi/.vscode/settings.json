@@ -1,0 +1,8 @@
+{
+  "cmake.configureArgs": [],
+  "cmake.buildDirectory": "${workspaceFolder}/drivers/indi/build",
+  "cmake.configureSettings": {
+    "CMAKE_INSTALL_PREFIX": "/usr",
+    "CMAKE_CURRENT_BINARY_DIR": "${workspaceFolder}/drivers/indi/build"
+  }
+}
