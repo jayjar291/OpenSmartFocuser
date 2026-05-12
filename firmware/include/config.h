@@ -33,6 +33,7 @@
  * TMC2209 electrical and mode settings used during driver initialization.
  */
 #define TMC_RMS_CURRENT 650
+#define MOTOR_IDLE_TIMEOUT_MS 30000
 #define TMC_MICROSTEPS 16
 #define TMC_SPREAD_CYCLE true
 

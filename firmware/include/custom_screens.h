@@ -597,13 +597,14 @@ class DeviceInfoScreen : public Screen {
     char valueBuffer[24];
     int leftY = contentTop;
     int rightY = contentTop;
+    const bool uartConnected = Movement::isUartConnected();
 
     drawKeyValueLine(leftX, leftValueRightX, leftY, "Motor", Movement::isMotorEnabled() ? "ON" : "OFF",
                      Movement::isMotorEnabled() ? kInfoAccentGood : kInfoAccentWarn);
     leftY += kLineHeight;
 
-    drawKeyValueLine(leftX, leftValueRightX, leftY, "UART", Movement::isUartConnected() ? "OK" : "FAIL",
-                     Movement::isUartConnected() ? kInfoAccentGood : kInfoAccentWarn);
+    drawKeyValueLine(leftX, leftValueRightX, leftY, "UART", uartConnected ? "OK" : "FAIL",
+             uartConnected ? kInfoAccentGood : kInfoAccentWarn);
     leftY += kLineHeight;
 
     drawKeyValueLine(leftX, leftValueRightX, leftY, "Busy", Movement::isBusy() ? "YES" : "NO",

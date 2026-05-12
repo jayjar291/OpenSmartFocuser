@@ -22,8 +22,48 @@ constexpr const char* kCurrentPositionKey = "steps";
 volatile bool homingInProgress = false;
 volatile bool homingReturnInProgress = false;
 bool jogActive = false;
+uint32_t lastMotorActivityMs = 0;
+bool uartConnectionLost = false;
+uint32_t lastUartReconnectAttemptMs = 0;
+bool uartConnectedCached = false;
+uint16_t driverCurrentCachedMa = 0;
+uint16_t driverMicrostepsCached = 0;
+
+constexpr uint32_t kUartReconnectAttemptIntervalMs = 500;
 
 bool wasMoving = false;
+
+void touchMotorActivity() {
+  lastMotorActivityMs = millis();
+}
+
+void configureTmcDriverRegisters() {
+  focuserDriver.begin();
+  focuserDriver.toff(4);
+  focuserDriver.rms_current(TMC_RMS_CURRENT);
+  focuserDriver.en_spreadCycle(TMC_SPREAD_CYCLE);
+  focuserDriver.microsteps(TMC_MICROSTEPS);
+  focuserDriver.pwm_autoscale(true);
+}
+
+void setMotorEnabledState(bool enabled) {
+  if (focuserStepper == nullptr) {
+    motorEnabled = enabled;
+    return;
+  }
+
+  motorEnabled = enabled;
+  touchMotorActivity();
+
+  if (enabled) {
+    focuserStepper->enableOutputs();
+    return;
+  }
+
+  jogActive = false;
+  focuserStepper->stopMove();
+  focuserStepper->disableOutputs();
+}
 
 bool isEndstopTriggered() {
   return digitalRead(PIN_BUTTON_ENDSTOP) == LOW;
@@ -44,12 +84,7 @@ void initializeDriver() {
 
   tmcSerial.begin(TMC_UART_BAUDRATE, SERIAL_8N1, PIN_TMC_UART_RX, PIN_TMC_UART_TX);
 
-  focuserDriver.begin();
-  focuserDriver.toff(4);
-  focuserDriver.rms_current(TMC_RMS_CURRENT);
-  focuserDriver.en_spreadCycle(TMC_SPREAD_CYCLE);
-  focuserDriver.microsteps(TMC_MICROSTEPS);
-  focuserDriver.pwm_autoscale(true);
+  configureTmcDriverRegisters();
 
   stepperEngine.init();
   focuserStepper = stepperEngine.stepperConnectToPin(PIN_TMC_STEP);
@@ -57,25 +92,64 @@ void initializeDriver() {
   focuserStepper->setEnablePin(PIN_TMC_ENABLE, true); // active LOW: LOW = motor enabled
   focuserStepper->setSpeedInHz(TMC_MAX_SPEED);
   focuserStepper->setAcceleration(TMC_MAX_ACCELERATION);
-  motorEnabled = false;
-  focuserStepper->disableOutputs();
+  setMotorEnabledState(false);
+  uartConnectedCached = (focuserDriver.test_connection() == 0);
+  if (uartConnectedCached) {
+    driverCurrentCachedMa = focuserDriver.rms_current();
+    driverMicrostepsCached = focuserDriver.microsteps();
+  } else {
+    driverCurrentCachedMa = 0;
+    driverMicrostepsCached = 0;
+  }
+  uartConnectionLost = false;
+  lastUartReconnectAttemptMs = millis();
   loadPersistentCurrentPosition();
 }
 
-
-void toggleMotorEnabled() {
-  motorEnabled = !motorEnabled;
+void healthCheck() {
   if (focuserStepper == nullptr) {
     return;
   }
 
-  if (motorEnabled) {
-    focuserStepper->enableOutputs();
-  } else {
-    jogActive = false;
-    focuserStepper->stopMove();
-    focuserStepper->disableOutputs();
+  const bool uartConnected = (focuserDriver.test_connection() == 0);
+  if (uartConnected) {
+    if (uartConnectionLost) {
+      DebugSerial::printFramed("TMC UART connection restored. Reinitializing registers.");
+      configureTmcDriverRegisters();
+      uartConnectionLost = false;
+      lastUartReconnectAttemptMs = millis();
+      DebugSerial::printFramed("TMC driver registers reloaded after reconnect.");
+    }
+    uartConnectedCached = true;
+    driverCurrentCachedMa = focuserDriver.rms_current();
+    driverMicrostepsCached = focuserDriver.microsteps();
+    return;
   }
+
+  uartConnectedCached = false;
+  driverCurrentCachedMa = 0;
+  driverMicrostepsCached = 0;
+
+  if (!uartConnectionLost) {
+    uartConnectionLost = true;
+    DebugSerial::printFramed("TMC UART connection lost. Entering reconnect mode.");
+    setMotorEnabledState(false);
+    DebugSerial::printFramed("Motor disabled while UART is disconnected.");
+  }
+
+  const uint32_t now = millis();
+  if (now - lastUartReconnectAttemptMs < kUartReconnectAttemptIntervalMs) {
+    return;
+  }
+
+  lastUartReconnectAttemptMs = now;
+  tmcSerial.end();
+  tmcSerial.begin(TMC_UART_BAUDRATE, SERIAL_8N1, PIN_TMC_UART_RX, PIN_TMC_UART_TX);
+  DebugSerial::printFramed("Attempting TMC UART reconnect...");
+}
+
+void toggleMotorEnabled() {
+  setMotorEnabledState(!motorEnabled);
 }
 
 bool isMotorEnabled() {
@@ -90,7 +164,8 @@ void jogForward() {
     focuserStepper->stopMove();
     return;
   }
-  focuserStepper->enableOutputs();
+  touchMotorActivity();
+  setMotorEnabledState(true);
   jogActive = true;
   focuserStepper->runForward();
 }
@@ -103,7 +178,8 @@ void jogBackward() {
     focuserStepper->stopMove();
     return;
   }
-  focuserStepper->enableOutputs();
+  touchMotorActivity();
+  setMotorEnabledState(true);
   jogActive = true;
   focuserStepper->runBackward();
 }
@@ -115,6 +191,7 @@ void stopJog() {
   if (jogActive) {
     focuserStepper->stopMove();
     jogActive = false;
+    touchMotorActivity();
   }
 }
 
@@ -127,7 +204,8 @@ void moveToPositionMm(float targetMm) {
     return;
   }
   jogActive = false;
-  focuserStepper->enableOutputs();
+  touchMotorActivity();
+  setMotorEnabledState(true);
   int32_t targetSteps = static_cast<int32_t>(targetMm * FOCUSER_STEPS_PER_MM);
   focuserStepper->moveTo(targetSteps);
 }
@@ -140,7 +218,8 @@ void moveToPosition(int32_t targetSteps) {
     return;
   }
   jogActive = false;
-  focuserStepper->enableOutputs();
+  touchMotorActivity();
+  setMotorEnabledState(true);
   focuserStepper->moveTo(targetSteps);
 }
 
@@ -209,6 +288,7 @@ void abortHoming() {
   jogActive = false;
   homingReturnInProgress = false;
   homingInProgress = false;
+  touchMotorActivity();
 }
 
 void startHoming() {
@@ -224,10 +304,10 @@ void startHoming() {
   jogActive = false;
 
   if (!motorEnabled) {
-    motorEnabled = true;
-    focuserStepper->enableOutputs();
+    setMotorEnabledState(true);
   }
 
+  touchMotorActivity();
   focuserStepper->stopMove();
   focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
   focuserStepper->runBackward();
@@ -243,6 +323,8 @@ void updateHoming() {
     return;
   }
 
+  touchMotorActivity();
+
   if (homingReturnInProgress) {
     if (!focuserStepper->isRunning()) {
       DebugSerial::printFramedValue("Homing complete. Position reset to ", FOCUSER_HOMING_RETURN_MM, " mm.");
@@ -252,6 +334,7 @@ void updateHoming() {
       //respond with :HD# to indicate homing complete
       savePersistentCurrentPosition();
       Serial.println(":HD#");
+      touchMotorActivity();
     }
     return;
   }
@@ -267,7 +350,27 @@ void updateHoming() {
     focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
     focuserStepper->moveTo(FOCUSER_STEPS_PER_MM * FOCUSER_HOMING_RETURN_MM);
     homingReturnInProgress = true;
+    touchMotorActivity();
   }
+}
+
+void updateMotorIdleTimeout() {
+  if (focuserStepper == nullptr || !motorEnabled || homingInProgress || homingReturnInProgress) {
+    return;
+  }
+
+  if (jogActive || focuserStepper->isRunning()) {
+    touchMotorActivity();
+    return;
+  }
+
+  const uint32_t now = millis();
+  if (now - lastMotorActivityMs < MOTOR_IDLE_TIMEOUT_MS) {
+    return;
+  }
+
+  DebugSerial::printFramed("Motor idle timeout reached. Disabling motor.");
+  setMotorEnabledState(false);
 }
 
 void updateSoftEndstops() {
@@ -287,21 +390,15 @@ bool isBusy() {
 }
 
 bool isUartConnected() {
-  return focuserStepper != nullptr && focuserDriver.test_connection() == 0;
+  return focuserStepper != nullptr && uartConnectedCached;
 }
 
 uint16_t getDriverMicrosteps() {
-  if (focuserStepper == nullptr) {
-    return 0;
-  }
-  return focuserDriver.microsteps();
+  return driverMicrostepsCached;
 }
 
 uint16_t getDriverCurrentMa() {
-  if (focuserStepper == nullptr) {
-    return 0;
-  }
-  return focuserDriver.rms_current();
+  return driverCurrentCachedMa;
 }
 
 void setSpeedSetting(uint8_t speedSettingIndex) {

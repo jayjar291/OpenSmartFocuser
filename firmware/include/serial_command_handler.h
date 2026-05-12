@@ -19,5 +19,7 @@ void handleListPresets(const char* parameters, size_t parametersLength);
 void handleAddPreset(const char* parameters, size_t parametersLength);
 void handleSetPreset(const char* parameters, size_t parametersLength);
 void handleRemovePreset(const char* parameters, size_t parametersLength);
+void handleGetCurrent(const char* parameters, size_t parametersLength);
+void handleGetMicrosteps(const char* parameters, size_t parametersLength);
 
 } // namespace SerialCommandHandler

@@ -5,6 +5,7 @@
 namespace Movement {
 
 void initializeDriver();
+void healthCheck();
 
 void toggleMotorEnabled();
 bool isMotorEnabled();
@@ -26,6 +27,7 @@ void clearPersistentCurrentPosition();
 void startHoming();
 void abortHoming();
 void updateHoming();
+void updateMotorIdleTimeout();
 void setSpeedSetting(uint8_t speedSettingIndex);
 
 void updateSoftEndstops();

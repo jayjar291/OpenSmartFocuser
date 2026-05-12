@@ -35,10 +35,21 @@ bool motorEnabled = false;
 static TaskHandle_t motorTaskHandle = nullptr;
 
 static void motorTask(void* /*param*/) {
+  static constexpr uint32_t kHealthCheckIntervalMs = 250;
+  uint32_t lastHealthCheckMs = 0;
+
   for (;;) {
     Movement::updateHoming();
     Movement::updateSoftEndstops();
     Movement::updatePositionPersistence();
+    Movement::updateMotorIdleTimeout();
+
+    const uint32_t now = millis();
+    if (now - lastHealthCheckMs >= kHealthCheckIntervalMs) {
+      Movement::healthCheck();
+      lastHealthCheckMs = now;
+    }
+
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 }

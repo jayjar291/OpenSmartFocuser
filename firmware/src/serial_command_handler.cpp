@@ -301,4 +301,20 @@ void handleSetPreset(const char* parameters, size_t parametersLength) {
   gSerial->println(kResponseAck);
 }
 
+//:CI# get motor current in mA, response :CI<currentMa>#.
+void handleGetCurrent(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->print(":CI");
+  gSerial->print(Movement::getDriverCurrentMa());
+  gSerial->println("#");}
+
+//:CU# get microstep setting, response :CU<currentMa>#.
+void handleGetMicrosteps(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->print(":CU");
+  gSerial->print(Movement::getDriverMicrosteps());
+  gSerial->println("#");}
+
 } // namespace SerialCommandHandler

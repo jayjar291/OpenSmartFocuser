@@ -29,6 +29,10 @@ const CommandEntry kCommands[] = {
   {":PS", SerialCommandHandler::handleSetPreset},
   //:PC<presetId># remove preset by id, response :ACK#.
   {":PC", SerialCommandHandler::handleRemovePreset},
+  //:CI# get motor current in mA, response :CI<currentMa>#.
+  {":CI", SerialCommandHandler::handleGetCurrent},
+  //:CU# get microstep setting, response :CU<currentMa>#.
+  {":CU", SerialCommandHandler::handleGetMicrosteps}, // TODO: implement handleGetMicrosteps
 };
 
 } // namespace
