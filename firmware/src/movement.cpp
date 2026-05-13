@@ -48,6 +48,22 @@ void configureTmcDriverRegisters() {
   focuserDriver.pwm_autoscale(true);
 }
 
+bool isEndstopTriggered() {
+  return digitalRead(PIN_BUTTON_ENDSTOP) == LOW;
+}
+
+void IRAM_ATTR onEndstopInterrupt() {
+  endstopInterruptPending = true;
+  if (homingInProgress || homingReturnInProgress) {
+    endstopTriggeredDuringHoming = true;
+  }
+}
+
+} // namespace
+
+namespace Movement {
+
+
 void setMotorEnabledState(bool enabled) {
   if (focuserStepper == nullptr) {
     motorEnabled = enabled;
@@ -67,20 +83,6 @@ void setMotorEnabledState(bool enabled) {
   focuserStepper->disableOutputs();
 }
 
-bool isEndstopTriggered() {
-  return digitalRead(PIN_BUTTON_ENDSTOP) == LOW;
-}
-
-void IRAM_ATTR onEndstopInterrupt() {
-  endstopInterruptPending = true;
-  if (homingInProgress || homingReturnInProgress) {
-    endstopTriggeredDuringHoming = true;
-  }
-}
-
-} // namespace
-
-namespace Movement {
 
 void initializeDriver() {
   pinMode(PIN_TMC_STEP, OUTPUT);
@@ -379,7 +381,7 @@ void startHoming() {
   focuserStepper->stopMove();
   
   setMotorEnabledState(true);
-  
+
   focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
   DebugSerial::printFramed("About to call runBackward()...");
   focuserStepper->moveTo(-100000); // Move a large distance backward to ensure we hit the endstop. The actual position will be reset to 0 when the endstop is triggered.
