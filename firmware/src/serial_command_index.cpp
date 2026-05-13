@@ -12,8 +12,6 @@ const CommandEntry kCommands[] = {
   {":GP", SerialCommandHandler::handleGetPosition},
   //:GM# get current movement state, response :GM<state># where state is IDLE, MOVING, or HOMING.
   {":GM", SerialCommandHandler::handleGetMovement}, // Not implemented yet.
-  //:GH# get homing state, response :GH<state># where state is NOT_HOMED, HOMING_IN_PROGRESS, or HOMED.
-  {":GH", SerialCommandHandler::handleGetHoming}, // Not implemented yet.
   //:GS# get current speed setting, response :GS<speed># where speed is 0-4.
   {":GS", SerialCommandHandler::handleGetSpeed}, // Not implemented yet.
   //:SP<position># override current position in steps, response :ACK#.

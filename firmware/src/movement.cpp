@@ -519,6 +519,22 @@ void setSpeedSetting(uint8_t speedSettingIndex) {
   }
 }
 
+uint8_t getSpeedSetting() {
+  if (speedHz == FINE_FOCUS_SPEED_STEPS_PER_SEC) {
+    return 0;
+  } else if (speedHz == SLOW_FOCUS_SPEED_STEPS_PER_SEC) {
+    return 1;
+  } else if (speedHz == MEDIUM_FOCUS_SPEED_STEPS_PER_SEC) {
+    return 2;
+  } else if (speedHz == FAST_FOCUS_SPEED_STEPS_PER_SEC) {
+    return 3;
+  } else if (speedHz == MAX_FOCUS_SPEED_STEPS_PER_SEC) {
+    return 4;
+  } else {
+    return -1; // Invalid speed setting
+  }
+}
+
 bool checkSoftEndstops(int32_t targetSteps) {
   return targetSteps >= FOCUSER_SOFT_MIN_STEPS && targetSteps <= FOCUSER_SOFT_MAX_STEPS;
 }
@@ -535,6 +551,17 @@ void updateSoftEndstops() {
     touchMotorActivity();
     return;
   }
+}
+
+
+MovementStatus getMovementStatus() {
+  if (homingInProgress || homingReturnInProgress) {
+    return MovementStatus::Homing;
+  }
+  if (isBusy()) {
+    return MovementStatus::Moving;
+  }
+  return MovementStatus::Idle;
 }
 
 } // namespace Movement

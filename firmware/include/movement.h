@@ -4,6 +4,15 @@
 
 namespace Movement {
 
+enum class MovementStatus {
+  Idle,
+  Moving,
+  Homing,
+  Error
+};
+
+MovementStatus getMovementStatus();
+
 void initializeDriver();
 void healthCheck();
 
@@ -34,6 +43,7 @@ void updateHoming();
 
 void updateMotorIdleTimeout();
 void setSpeedSetting(uint8_t speedSettingIndex);
+uint8_t getSpeedSetting();
 
 bool isBusy();
 bool isUartConnected();

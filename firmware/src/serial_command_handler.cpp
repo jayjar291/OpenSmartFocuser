@@ -14,8 +14,14 @@ namespace {
 constexpr size_t kMaxCommandLength = 64;
 constexpr size_t kMaxPayloadLength = 64;
 constexpr const char* kResponseAck = ":ACK#";
+constexpr const char* kResponseUnknown = ":ER01#";
 constexpr const char* kResponseInvalidArgs = ":ER02#";
+constexpr const char* kResponseBusy = ":ER03#";
+constexpr const char* kResponseHomingRequired = ":ER04#";
+constexpr const char* kResponseAddonUnavalable = ":ER05#";
+constexpr const char* kResponsePositionExceedLimit  = ":ER06#";
 constexpr const char* kResponseError = ":ERR#";
+
 HardwareSerial* gSerial = nullptr;
 char gCommandBuffer[kMaxCommandLength + 1] = {0};
 size_t gCommandLength = 0;
@@ -93,7 +99,7 @@ void poll() {
       DebugSerial::printFramed("Received command frame:");
       DebugSerial::printFramed(gCommandBuffer);
       if (!SerialCommandIndex::dispatch(gCommandBuffer, gCommandLength)) {
-        gSerial->println(kResponseError);
+        gSerial->println(kResponseUnknown);
       }
       gCommandLength = 0;
       gCapturing = false;
@@ -121,21 +127,37 @@ void handleGetFirmwareVersion(const char* parameters, size_t parametersLength) {
 void handleGetMovement(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
-  gSerial->println(":TODO#");
-}
-
-//:GH# get homing status, response :GH<statusString>#.
-void handleGetHoming(const char* parameters, size_t parametersLength) {
-  (void)parameters;
-  (void)parametersLength;
-  gSerial->println(":TODO#");
+  Movement::MovementStatus status = Movement::getMovementStatus();
+   gSerial->print(":GM");
+   switch (status) {
+     case Movement::MovementStatus::Idle:
+       gSerial->print("Idle");
+       break;
+     case Movement::MovementStatus::Moving:
+       gSerial->print("Moving");
+       break;
+     case Movement::MovementStatus::Homing:
+       gSerial->print("Homing");
+       break;
+     case Movement::MovementStatus::Error:
+       gSerial->print("Error");
+       break;
+   }
+   gSerial->println("#");
 }
 
 //:GS# get current speed setting, response :GS<speed># where speed is 1-5.
 void handleGetSpeed(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
-  gSerial->println(":TODO#");
+  gSerial->print(":GS");
+  uint8_t speedSetting = Movement::getSpeedSetting();
+  if (speedSetting <= 4) {
+    gSerial->print(speedSetting);
+  } else {
+    gSerial->print("Unknown");
+  }
+  gSerial->println("#");
 }
 
 //:GP# get current position in steps, response :GP<positionSteps>#.
@@ -149,9 +171,23 @@ void handleGetPosition(const char* parameters, size_t parametersLength) {
 
 //:SP<positionSteps># override current position in steps, response :ACK#.
 void handleSetPosition(const char* parameters, size_t parametersLength) {
-  (void)parameters;
-  (void)parametersLength;
-  gSerial->println(":TODO#");
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  int32_t positionSteps = 0;
+  if (!readInt32Arg(args, 0, positionSteps)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  if (!Movement::checkSoftEndstops(positionSteps)) {
+    gSerial->println(kResponsePositionExceedLimit);
+    return;
+  }
+  Movement::setCurrentPositionSteps(positionSteps);
+  gSerial->println(kResponseAck);
 }
 
 //-----------------------------------------------------------homing command below------------------------------------------------------
@@ -202,7 +238,7 @@ void handleGotoPreset(const char* parameters, size_t parametersLength) {
   }
 
   if (!preset::gotoById(static_cast<uint8_t>(presetId))) {
-    gSerial->println(kResponseError);
+    gSerial->println(kResponseInvalidArgs);
     return;
   }
 
@@ -226,7 +262,7 @@ void handleGetPreset(const char* parameters, size_t parametersLength) {
 
   preset::Preset p{};
   if (!preset::getById(static_cast<uint8_t>(presetId), p)) {
-    gSerial->println(kResponseError);
+    gSerial->println(kResponseInvalidArgs);
     return;
   }
   gSerial->print(":PR");
@@ -385,26 +421,61 @@ void handleGetMicrosteps(const char* parameters, size_t parametersLength) {
   gSerial->println("#");
 }
 
-//movement commands below are not implemented yet, just placeholders for future implementation. They will all respond with :TODO# for now.
+//----------------------------------------------------------------motion commands below------------------------------------------------------
 
 //:MA<positionSteps># move to absolute position in steps, response :ACK#.
 void handleMoveAbsolute(const char* parameters, size_t parametersLength) {
-  (void)parameters;
-  (void)parametersLength;
-  gSerial->println(":TODO#");
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  int32_t positionSteps = 0;
+  if (!readInt32Arg(args, 0, positionSteps)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  if (!Movement::checkSoftEndstops(positionSteps)) {
+    gSerial->println(kResponsePositionExceedLimit);
+    return;
+  }
+
+  Movement::moveToPosition(positionSteps);
+  gSerial->println(kResponseAck);
 }
+
 //:MR<relativeSteps># move relative number of steps, response :ACK#.
 void handleMoveRelative(const char* parameters, size_t parametersLength) {
-  (void)parameters;
-  (void)parametersLength;
-  gSerial->println(":TODO#");
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  int32_t relativeSteps = 0;
+  if (!readInt32Arg(args, 0, relativeSteps)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  if (!Movement::checkSoftEndstops(Movement::getCurrentPositionSteps() + relativeSteps)) {
+    gSerial->println(kResponsePositionExceedLimit);
+    return;
+  }
+
+  Movement::moveRelative(relativeSteps);
+  gSerial->println(kResponseAck);
 }
 //:MH# stop motion immediately, response :ACK#.
 void handleHalt(const char* parameters, size_t parametersLength) {  
   (void)parameters;
   (void)parametersLength;
   Movement::halt();
-  gSerial->println(":ACK#");
+  gSerial->println(kResponseAck);
 }
 //:MS<speed 0-4># set movement speed, response :ACK#.
 void handleSetSpeed(const char* parameters, size_t parametersLength) {
@@ -424,7 +495,7 @@ void handleSetSpeed(const char* parameters, size_t parametersLength) {
     return;
   }
   Movement::setSpeedSetting(static_cast<uint8_t>(speed));
-  gSerial->println(":ACK#");
+  gSerial->println(kResponseAck);
 }
 
 
