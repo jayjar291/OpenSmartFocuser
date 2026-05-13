@@ -16,8 +16,10 @@ MovementStatus getMovementStatus();
 void initializeDriver();
 void healthCheck();
 
+void setMotorEnabledState(bool enabled);
 void toggleMotorEnabled();
 bool isMotorEnabled();
+
 
 void jogForward();
 void jogBackward();

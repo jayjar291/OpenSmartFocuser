@@ -171,8 +171,7 @@ void jogForward() {
     return;
   }
   if (!motorEnabled) {
-    focuserStepper->stopMove();
-    return;
+    setMotorEnabledState(true);
   }
   // When jogging forward, we want to prevent moving further if we are already at or beyond the soft endstop limit.
   if (!checkSoftEndstops(focuserStepper->getCurrentPosition() + 250)) {
@@ -190,8 +189,7 @@ void jogBackward() {
     return;
   }
   if (!motorEnabled) {
-    focuserStepper->stopMove();
-    return;
+    setMotorEnabledState(true);
   }
   if (isEndstopTriggered())
   {
@@ -223,6 +221,7 @@ void halt() {
   jogActive = false;
   homingReturnInProgress = false;
   homingInProgress = false;
+  setMotorEnabledState(false);
 
   noInterrupts();
   endstopInterruptPending = false;
@@ -237,7 +236,7 @@ void moveToPositionMm(float targetMm) {
     return;
   }
   if (!motorEnabled) {
-    return;
+    setMotorEnabledState(true);
   }
   jogActive = false;
   touchMotorActivity();
@@ -255,7 +254,7 @@ void moveToPosition(int32_t targetSteps) {
     return;
   }
   if (!motorEnabled) {
-    return;
+    setMotorEnabledState(true);
   }
   if (!checkSoftEndstops(targetSteps)) {
     DebugSerial::printFramedValue("Target position ", targetSteps, " steps is outside of soft endstop limits. movement ignored.");
@@ -272,7 +271,7 @@ void moveRelative(int32_t relativeSteps) {
     return;
   }
   if (!motorEnabled) {
-    return;
+    setMotorEnabledState(true);
   }
   int32_t currentSteps = focuserStepper->getCurrentPosition();
   int32_t targetSteps = currentSteps + relativeSteps;
@@ -380,7 +379,7 @@ void startHoming() {
   focuserStepper->stopMove();
   
   setMotorEnabledState(true);
-  focuserStepper->enableOutputs();
+  
   focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
   DebugSerial::printFramed("About to call runBackward()...");
   focuserStepper->moveTo(-100000); // Move a large distance backward to ensure we hit the endstop. The actual position will be reset to 0 when the endstop is triggered.

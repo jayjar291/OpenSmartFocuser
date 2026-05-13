@@ -58,7 +58,14 @@ const CommandEntry kCommands[] = {
   //:MS<speed 0-4># set movement speed, response :ACK#.
   {":MS", SerialCommandHandler::handleSetSpeed}, 
   //--------------------------------------------------------------system commands below------------------------------------------------------
+  //:RB# reboot the system, response :ACK# and 3 second delay before rebooting.
   {":RB", SerialCommandHandler::handleReboot}, // Reboot command, response :ACK#. and 3 second delay before rebooting.
+  //:TM# toggle motor enabled state, response :TM<state># state is 1 for enabled, 0 for disabled.
+  {":TM", SerialCommandHandler::handleToggleMotor},
+  //:DM# disable motor, response :ACK#.
+  {":DM", SerialCommandHandler::handleDisableMotor},
+  //:EM# enable motor, response :ACK#.
+  {":EM", SerialCommandHandler::handleEnableMotor},
   //--------------------------------------------------------------addon commands below------------------------------------------------------
   // TODO addon commands for sensors, auxiliary outputs, etc.
 };

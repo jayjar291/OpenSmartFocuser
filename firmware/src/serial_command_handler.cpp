@@ -516,5 +516,38 @@ void handleReboot(const char* parameters, size_t parametersLength) {
   delay(250);
   ESP.restart();
 }
+//:TM# toggle motor enabled state, response :TM<state># state is 1 for enabled, 0 for disabled.
+void handleToggleMotor(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  Movement::toggleMotorEnabled();
+  gSerial->print(":TM");
+  gSerial->print(Movement::isMotorEnabled() ? "1" : "0");
+  gSerial->println("#");
+}
+
+//:DM# disable motor, response :ACK#.
+void handleDisableMotor(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  if (!Movement::isMotorEnabled()) {
+    gSerial->println(kResponseAck);
+    return;
+  }
+  Movement::setMotorEnabledState(false);
+  gSerial->println(kResponseAck);
+}
+
+//:EM# enable motor, response :ACK#.
+void handleEnableMotor(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  if (Movement::isMotorEnabled()) {
+    gSerial->println(kResponseAck);
+    return;
+  }
+  Movement::setMotorEnabledState(true);
+  gSerial->println(kResponseAck);
+}
 
 } // namespace SerialCommandHandler

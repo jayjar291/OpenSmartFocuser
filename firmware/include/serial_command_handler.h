@@ -32,5 +32,8 @@ void handleMoveRelative(const char* parameters, size_t parametersLength);
 void handleHalt(const char* parameters, size_t parametersLength);
 void handleSetSpeed(const char* parameters, size_t parametersLength);
 void handleReboot(const char* parameters, size_t parametersLength);
+void handleToggleMotor(const char* parameters, size_t parametersLength);
+void handleDisableMotor(const char* parameters, size_t parametersLength);
+void handleEnableMotor(const char* parameters, size_t parametersLength);
 
 } // namespace SerialCommandHandler
