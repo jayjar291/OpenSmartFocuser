@@ -31,5 +31,6 @@ void handleMoveAbsolute(const char* parameters, size_t parametersLength);
 void handleMoveRelative(const char* parameters, size_t parametersLength);
 void handleHalt(const char* parameters, size_t parametersLength);
 void handleSetSpeed(const char* parameters, size_t parametersLength);
+void handleReboot(const char* parameters, size_t parametersLength);
 
 } // namespace SerialCommandHandler

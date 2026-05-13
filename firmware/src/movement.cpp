@@ -223,10 +223,12 @@ void halt() {
   jogActive = false;
   homingReturnInProgress = false;
   homingInProgress = false;
+
   noInterrupts();
   endstopInterruptPending = false;
   endstopTriggeredDuringHoming = false;
   interrupts();
+
   touchMotorActivity();
 }
 
@@ -366,19 +368,23 @@ void startHoming() {
   homingReturnInProgress = false;
   homingInProgress = true;
   jogActive = false;
+  
+  
   noInterrupts();
   endstopInterruptPending = false;
   endstopTriggeredDuringHoming = false;
   interrupts();
 
-  if (!motorEnabled) {
-    setMotorEnabledState(true);
-  }
-
+  
   touchMotorActivity();
   focuserStepper->stopMove();
+  
+  setMotorEnabledState(true);
+  focuserStepper->enableOutputs();
   focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
-  focuserStepper->runBackward();
+  DebugSerial::printFramed("About to call runBackward()...");
+  focuserStepper->moveTo(-100000); // Move a large distance backward to ensure we hit the endstop. The actual position will be reset to 0 when the endstop is triggered.
+  DebugSerial::printFramedValue("Motor is running after runBackward(): ", focuserStepper->isRunning(), "");
 }
 
 void processEndstopEvent() {
@@ -416,6 +422,7 @@ void updateHoming() {
   }
 
   if (!motorEnabled) {
+    DebugSerial::printFramed("Motor disabled during homing. Aborting homing.");
     abortHoming();
     return;
   }
@@ -440,6 +447,7 @@ void updateHoming() {
   noInterrupts();
   triggeredDuringHoming = endstopTriggeredDuringHoming;
   if (triggeredDuringHoming) {
+    DebugSerial::printFramed("Endstop was triggered during homing. 451");
     endstopTriggeredDuringHoming = false;
   }
   interrupts();

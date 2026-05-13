@@ -333,3 +333,21 @@ uint8_t getFocusSpeedSetting() {
 uint8_t getBrightnessSetting() {
   return settingsScreen.getSettingValue(MenuStrings::kSettingBrightness);
 }
+
+void adjustFocusSpeedSetting(uint8_t targetSpeed) {
+  uint8_t currentSpeed = getFocusSpeedSetting();
+  DebugSerial::printFramedValue("adjustFocusSpeedSetting: currentSpeed", currentSpeed, "");
+  DebugSerial::printFramedValue("adjustFocusSpeedSetting: targetSpeed", targetSpeed, "");
+  while (currentSpeed < targetSpeed) {
+    settingsScreen.modify(1, MenuStrings::kSettingFocusSpeed); // Increment
+    currentSpeed = getFocusSpeedSetting();
+    DebugSerial::printFramed("adjustFocusSpeedSetting: incremented speed");
+    DebugSerial::printFramedValue("adjustFocusSpeedSetting: currentSpeed", currentSpeed, "");
+  }
+  while (currentSpeed > targetSpeed) {
+    settingsScreen.modify(-1, MenuStrings::kSettingFocusSpeed); // Decrement
+    currentSpeed = getFocusSpeedSetting();
+    DebugSerial::printFramed("adjustFocusSpeedSetting: decremented speed");
+    DebugSerial::printFramedValue("adjustFocusSpeedSetting: currentSpeed", currentSpeed, "");
+  }
+}

@@ -4,6 +4,7 @@
 #include "debug_serial.h"
 #include "PayloadParser.h"
 #include "preset.h"
+#include "menu.h"
 
 #include <cstring>
 
@@ -495,8 +496,25 @@ void handleSetSpeed(const char* parameters, size_t parametersLength) {
     return;
   }
   Movement::setSpeedSetting(static_cast<uint8_t>(speed));
+  adjustFocusSpeedSetting(speed);
   gSerial->println(kResponseAck);
 }
 
+
+//-------------------------------------------------------------------system commands below------------------------------------------------------
+//:RB# reboot, response :ACK#. and 3 second delay before rebooting.
+void handleReboot(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->println(kResponseAck);
+  delay(1000);
+  gSerial->print(":Rebooting.");
+  delay(1000);
+  gSerial->print(".");
+  delay(1000);
+  gSerial->println(".#");
+  delay(250);
+  ESP.restart();
+}
 
 } // namespace SerialCommandHandler
