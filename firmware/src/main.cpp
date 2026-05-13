@@ -39,8 +39,9 @@ static void motorTask(void* /*param*/) {
   uint32_t lastHealthCheckMs = 0;
 
   for (;;) {
-    Movement::updateHoming();
+    Movement::processEndstopEvent();
     Movement::updateSoftEndstops();
+    Movement::updateHoming();
     Movement::updatePositionPersistence();
     Movement::updateMotorIdleTimeout();
 

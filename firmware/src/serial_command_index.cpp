@@ -14,7 +14,7 @@ const CommandEntry kCommands[] = {
   {":GM", SerialCommandHandler::handleGetMovement}, // Not implemented yet.
   //:GH# get homing state, response :GH<state># where state is NOT_HOMED, HOMING_IN_PROGRESS, or HOMED.
   {":GH", SerialCommandHandler::handleGetHoming}, // Not implemented yet.
-  //:GS# get current speed setting, response :GS<speed># where speed is 1-5.
+  //:GS# get current speed setting, response :GS<speed># where speed is 0-4.
   {":GS", SerialCommandHandler::handleGetSpeed}, // Not implemented yet.
   //:SP<position># override current position in steps, response :ACK#.
   {":SP", SerialCommandHandler::handleSetPosition}, // Not implemented yet.
@@ -57,7 +57,7 @@ const CommandEntry kCommands[] = {
   {":MR", SerialCommandHandler::handleMoveRelative}, // Not implemented yet.
   //:MH# stop motion immediately, response :ACK#.
   {":MH", SerialCommandHandler::handleHalt}, // Not implemented yet.
-  //:MS<speed 1-5># set movement speed, response :ACK#.
+  //:MS<speed 0-4># set movement speed, response :ACK#.
   {":MS", SerialCommandHandler::handleSetSpeed}, // Not implemented yet.
   //--------------------------------------------------------------addon commands below------------------------------------------------------
   // TODO addon commands for sensors, auxiliary outputs, etc.

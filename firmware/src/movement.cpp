@@ -21,6 +21,8 @@ constexpr const char* kCurrentPositionKey = "steps";
 
 volatile bool homingInProgress = false;
 volatile bool homingReturnInProgress = false;
+volatile bool endstopInterruptPending = false;
+volatile bool endstopTriggeredDuringHoming = false;
 bool jogActive = false;
 uint32_t lastMotorActivityMs = 0;
 bool uartConnectionLost = false;
@@ -69,6 +71,13 @@ bool isEndstopTriggered() {
   return digitalRead(PIN_BUTTON_ENDSTOP) == LOW;
 }
 
+void IRAM_ATTR onEndstopInterrupt() {
+  endstopInterruptPending = true;
+  if (homingInProgress || homingReturnInProgress) {
+    endstopTriggeredDuringHoming = true;
+  }
+}
+
 } // namespace
 
 namespace Movement {
@@ -81,6 +90,7 @@ void initializeDriver() {
   pinMode(PIN_TMC_ENABLE, OUTPUT);
   digitalWrite(PIN_TMC_ENABLE, HIGH);
   pinMode(PIN_BUTTON_ENDSTOP, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(PIN_BUTTON_ENDSTOP), onEndstopInterrupt, FALLING);
 
   tmcSerial.begin(TMC_UART_BAUDRATE, SERIAL_8N1, PIN_TMC_UART_RX, PIN_TMC_UART_TX);
 
@@ -164,6 +174,12 @@ void jogForward() {
     focuserStepper->stopMove();
     return;
   }
+  // When jogging forward, we want to prevent moving further if we are already at or beyond the soft endstop limit.
+  DebugSerial::printFramedValue("current position is" , focuserStepper->getCurrentPosition(),"");
+  if (!checkSoftEndstops(focuserStepper->getCurrentPosition() + 250)) {
+    DebugSerial::printFramedValue("target position is" , focuserStepper->getCurrentPosition() + 250,"target position is outside of soft endstop limits. Jog movement ignored.");
+    return;
+  }
   touchMotorActivity();
   setMotorEnabledState(true);
   jogActive = true;
@@ -176,6 +192,11 @@ void jogBackward() {
   }
   if (!motorEnabled) {
     focuserStepper->stopMove();
+    return;
+  }
+  if (isEndstopTriggered())
+  {
+    DebugSerial::printFramed("Endstop is triggered. Jog backward ignored.");
     return;
   }
   touchMotorActivity();
@@ -195,6 +216,20 @@ void stopJog() {
   }
 }
 
+void halt() {
+  if (focuserStepper == nullptr) {
+    return;
+  }
+  focuserStepper->forceStop();
+  jogActive = false;
+  homingReturnInProgress = false;
+  homingInProgress = false;
+  noInterrupts();
+  endstopInterruptPending = false;
+  endstopTriggeredDuringHoming = false;
+  interrupts();
+  touchMotorActivity();
+}
 
 void moveToPositionMm(float targetMm) {
   if (focuserStepper == nullptr) {
@@ -207,6 +242,10 @@ void moveToPositionMm(float targetMm) {
   touchMotorActivity();
   setMotorEnabledState(true);
   int32_t targetSteps = static_cast<int32_t>(targetMm * FOCUSER_STEPS_PER_MM);
+  if (!checkSoftEndstops(targetSteps)) {
+    DebugSerial::printFramedValue("Target position ", targetSteps, " steps is outside of soft endstop limits. movement ignored.");
+    return;
+  }
   focuserStepper->moveTo(targetSteps);
 }
 
@@ -215,6 +254,29 @@ void moveToPosition(int32_t targetSteps) {
     return;
   }
   if (!motorEnabled) {
+    return;
+  }
+  if (!checkSoftEndstops(targetSteps)) {
+    DebugSerial::printFramedValue("Target position ", targetSteps, " steps is outside of soft endstop limits. movement ignored.");
+    return;
+  }
+  jogActive = false;
+  touchMotorActivity();
+  setMotorEnabledState(true);
+  focuserStepper->moveTo(targetSteps);
+}
+
+void moveRelative(int32_t relativeSteps) {
+  if (focuserStepper == nullptr) {
+    return;
+  }
+  if (!motorEnabled) {
+    return;
+  }
+  int32_t currentSteps = focuserStepper->getCurrentPosition();
+  int32_t targetSteps = currentSteps + relativeSteps;
+  if (!checkSoftEndstops(targetSteps)) {
+    DebugSerial::printFramedValue("Target position ", targetSteps, " steps is outside of soft endstop limits. movement ignored.");
     return;
   }
   jogActive = false;
@@ -288,6 +350,9 @@ void abortHoming() {
   jogActive = false;
   homingReturnInProgress = false;
   homingInProgress = false;
+  noInterrupts();
+  endstopTriggeredDuringHoming = false;
+  interrupts();
   touchMotorActivity();
 }
 
@@ -302,6 +367,10 @@ void startHoming() {
   homingReturnInProgress = false;
   homingInProgress = true;
   jogActive = false;
+  noInterrupts();
+  endstopInterruptPending = false;
+  endstopTriggeredDuringHoming = false;
+  interrupts();
 
   if (!motorEnabled) {
     setMotorEnabledState(true);
@@ -311,6 +380,35 @@ void startHoming() {
   focuserStepper->stopMove();
   focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
   focuserStepper->runBackward();
+}
+
+void processEndstopEvent() {
+  bool hasInterruptEvent = false;
+  noInterrupts();
+  hasInterruptEvent = endstopInterruptPending;
+  if (hasInterruptEvent) {
+    endstopInterruptPending = false;
+  }
+  interrupts();
+
+  if (!hasInterruptEvent) {
+    return;
+  }
+
+  if (homingInProgress || homingReturnInProgress) {
+    noInterrupts();
+    endstopTriggeredDuringHoming = true;
+    interrupts();
+    return;
+  }
+
+  if (focuserStepper == nullptr) {
+    return;
+  }
+  focuserStepper->forceStopAndNewPosition(0);
+  jogActive = false;
+  touchMotorActivity();
+  DebugSerial::printFramed("Endstop interrupt triggered. Movement halted.");
 }
 
 void updateHoming() {
@@ -339,7 +437,15 @@ void updateHoming() {
     return;
   }
 
-  if (isEndstopTriggered()) {
+  bool triggeredDuringHoming = false;
+  noInterrupts();
+  triggeredDuringHoming = endstopTriggeredDuringHoming;
+  if (triggeredDuringHoming) {
+    endstopTriggeredDuringHoming = false;
+  }
+  interrupts();
+
+  if (triggeredDuringHoming || isEndstopTriggered()) {
     DebugSerial::printFramed("Endstop triggered during homing.");
     DebugSerial::printFramedValue("Position at endstop trigger (steps): ", getCurrentPositionSteps(), "");
     DebugSerial::printFramed("setting position to 0 and starting return move...");
@@ -371,18 +477,6 @@ void updateMotorIdleTimeout() {
 
   DebugSerial::printFramed("Motor idle timeout reached. Disabling motor.");
   setMotorEnabledState(false);
-}
-
-void updateSoftEndstops() {
-  if (focuserStepper == nullptr || homingInProgress || !motorEnabled) {
-    return;
-  }
-
-  const int32_t pos = focuserStepper->getCurrentPosition();
-  if (pos < FOCUSER_SOFT_MIN_STEPS || pos > FOCUSER_SOFT_MAX_STEPS) {
-    focuserStepper->stopMove();
-    DebugSerial::printFramed("Soft endstop triggered. Stopping movement.");
-  }
 }
 
 bool isBusy() {
@@ -423,6 +517,24 @@ void setSpeedSetting(uint8_t speedSettingIndex) {
   }
   if (focuserStepper != nullptr && !homingInProgress && !jogActive && !homingReturnInProgress) {
     focuserStepper->setSpeedInHz(speedHz);
+  }
+}
+
+bool checkSoftEndstops(int32_t targetSteps) {
+  return targetSteps >= FOCUSER_SOFT_MIN_STEPS && targetSteps <= FOCUSER_SOFT_MAX_STEPS;
+}
+
+void updateSoftEndstops() {
+  if (focuserStepper == nullptr || homingInProgress || !motorEnabled) {
+    return;
+  }
+  const int32_t pos = focuserStepper->getCurrentPosition();
+  if (pos > FOCUSER_SOFT_MAX_STEPS) {
+    focuserStepper->forceStopAndNewPosition(FOCUSER_SOFT_MAX_STEPS);
+    DebugSerial::printFramed("Soft endstop triggered. Stopping movement.");
+    jogActive = false;
+    touchMotorActivity();
+    return;
   }
 }
 

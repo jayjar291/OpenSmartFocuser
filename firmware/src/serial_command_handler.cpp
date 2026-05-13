@@ -403,13 +403,28 @@ void handleMoveRelative(const char* parameters, size_t parametersLength) {
 void handleHalt(const char* parameters, size_t parametersLength) {  
   (void)parameters;
   (void)parametersLength;
-  gSerial->println(":TODO#");
+  Movement::halt();
+  gSerial->println(":ACK#");
 }
-//:MS<speed 1-5># set movement speed, response :ACK#.
+//:MS<speed 0-4># set movement speed, response :ACK#.
 void handleSetSpeed(const char* parameters, size_t parametersLength) {
-  (void)parameters;
-  (void)parametersLength;
-  gSerial->println(":TODO#");
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  int32_t speed = 0;
+  if (!readInt32Arg(args, 0, speed)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  if (speed < 0 || speed > 4) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  Movement::setSpeedSetting(static_cast<uint8_t>(speed));
+  gSerial->println(":ACK#");
 }
 
 

@@ -14,8 +14,12 @@ void jogForward();
 void jogBackward();
 void stopJog();
 
+void halt();
+
 void moveToPosition(int32_t targetSteps);
 void moveToPositionMm(float targetMm);
+void moveRelative(int32_t relativeSteps);
+
 int32_t getCurrentPositionSteps();
 void setCurrentPositionSteps(int32_t positionSteps);
 
@@ -27,13 +31,18 @@ void clearPersistentCurrentPosition();
 void startHoming();
 void abortHoming();
 void updateHoming();
+
 void updateMotorIdleTimeout();
 void setSpeedSetting(uint8_t speedSettingIndex);
 
-void updateSoftEndstops();
 bool isBusy();
 bool isUartConnected();
+
 uint16_t getDriverMicrosteps();
 uint16_t getDriverCurrentMa();
+
+void processEndstopEvent();
+void updateSoftEndstops();
+bool checkSoftEndstops(int32_t targetSteps);
 
 } // namespace Movement
