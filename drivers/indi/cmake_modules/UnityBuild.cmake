@@ -47,12 +47,12 @@ MACRO (COMMIT_UNITY_FILE UNITY_FILE FILE_CONTENT)
     MESSAGE(STATUS "Write Unity Build file: " ${${UNITY_FILE}})
     FILE(WRITE ${${UNITY_FILE}} "${${FILE_CONTENT}}")
   ENDIF ()
-  # Create a dummy copy of the unity file to trigger CMake reconfigure if it is deleted.
+  # Create a marker copy of the unity file to trigger CMake reconfigure if it is deleted.
   SET(UNITY_FILE_PATH "")
   SET(UNITY_FILE_NAME "")
   GET_FILENAME_COMPONENT(UNITY_FILE_PATH ${${UNITY_FILE}} PATH)
   GET_FILENAME_COMPONENT(UNITY_FILE_NAME ${${UNITY_FILE}} NAME)
-  CONFIGURE_FILE(${${UNITY_FILE}} ${UNITY_FILE_PATH}/CMakeFiles/${UNITY_FILE_NAME}.dummy)
+  CONFIGURE_FILE(${${UNITY_FILE}} ${UNITY_FILE_PATH}/CMakeFiles/${UNITY_FILE_NAME}.marker)
 ENDMACRO ()
 
 MACRO (ENABLE_UNITY_BUILD TARGET_NAME SOURCE_VARIABLE_NAME UNIT_SIZE EXTENSION)

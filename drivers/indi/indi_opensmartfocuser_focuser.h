@@ -2,11 +2,17 @@
 
 #include "indifocuser.h"
 
-class OpenSmartFocuserDummy : public INDI::Focuser
+#include "indipropertyswitch.h"
+#include "indipropertytext.h"
+
+#include <cstdint>
+#include <string>
+
+class OpenSmartFocuser : public INDI::Focuser
 {
 	public:
-		OpenSmartFocuserDummy();
-		~OpenSmartFocuserDummy() override = default;
+		OpenSmartFocuser();
+		~OpenSmartFocuser() override = default;
 
 		const char *getDefaultName() override;
 
@@ -20,14 +26,29 @@ class OpenSmartFocuserDummy : public INDI::Focuser
 		IPState MoveAbsFocuser(uint32_t targetTicks) override;
 		IPState MoveRelFocuser(FocusDirection dir, uint32_t ticks) override;
 		bool AbortFocuser() override;
-		bool ReverseFocuser(bool enabled) override;
-		bool SyncFocuser(uint32_t ticks) override;
-		bool SetFocuserMaxPosition(uint32_t ticks) override;
-		bool SetFocuserBacklash(int32_t steps) override;
-		bool SetFocuserBacklashEnabled(bool enabled) override;
-		bool SetFocuserSpeed(int speed) override;
+
+		bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n) override;
+		bool ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n) override;
 
 	private:
-		uint32_t simulatedPosition { 0 };
-		bool reverseEnabled { false };
+		void initCustomProperties();
+		void updateCustomPropertyVisibility();
+		bool openSerialPort();
+		void closeSerialPort();
+		bool sendFrame(const std::string &frame);
+		bool readFrame(std::string &frame, int timeoutMs);
+		bool sendCommand(const std::string &token, const std::string &payload, std::string &response);
+		bool commandAck(const std::string &token, const std::string &payload);
+		bool queryPosition(uint32_t &position);
+		void publishRawOutput(const std::string &output);
+
+		INDI::PropertyText UsbPortTP {1};
+		INDI::PropertyText RawCommandTP {1};
+		INDI::PropertyText RawOutputTP {1};
+		INDI::PropertySwitch MotorControlSP {2};
+		INDI::PropertySwitch RebootSP {1};
+		INDI::PropertySwitch RawSendSP {1};
+
+		int serialFD { -1 };
+		uint32_t cachedPosition { 0 };
 };

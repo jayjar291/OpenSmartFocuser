@@ -2,130 +2,476 @@
 #include "indi_opensmartfocuser_focuser.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
 #include <memory>
+#include <string>
 
-static std::unique_ptr<OpenSmartFocuserDummy> openSmartFocuserDummy(new OpenSmartFocuserDummy());
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+#include <sys/select.h>
 
-OpenSmartFocuserDummy::OpenSmartFocuserDummy()
+static std::unique_ptr<OpenSmartFocuser> openSmartFocuser(new OpenSmartFocuser());
+
+namespace
 {
-	FI::SetCapability(FOCUSER_CAN_ABS_MOVE | FOCUSER_CAN_REL_MOVE | FOCUSER_CAN_ABORT | FOCUSER_CAN_REVERSE |
-					  FOCUSER_CAN_SYNC | FOCUSER_HAS_VARIABLE_SPEED | FOCUSER_HAS_BACKLASH);
-	setVersion(CDRIVER_VERSION_MAJOR, CDRIVER_VERSION_MINOR);
+
+constexpr const char *CUSTOM_TAB = "Custom";
+constexpr int SERIAL_BAUD = B115200;
+constexpr int SERIAL_TIMEOUT_MS = 1500;
+
+bool parsePositiveInteger(const std::string &text, uint32_t &value)
+{
+    if (text.empty())
+        return false;
+
+    char *endptr = nullptr;
+    errno = 0;
+    const unsigned long converted = std::strtoul(text.c_str(), &endptr, 10);
+    if (errno != 0 || endptr == text.c_str() || *endptr != '\0')
+        return false;
+
+    value = static_cast<uint32_t>(converted);
+    return true;
 }
 
-const char *OpenSmartFocuserDummy::getDefaultName()
+bool startsWith(const std::string &text, const std::string &prefix)
 {
-	return "OpenSmartFocuser Dummy";
+    return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
 }
 
-bool OpenSmartFocuserDummy::initProperties()
-{
-	INDI::Focuser::initProperties();
+} // namespace
 
-	simulatedPosition = static_cast<uint32_t>(FocusAbsPosNP[0].getValue());
-	LOG_INFO("Initialized dummy focuser properties (log-only mode).");
-	return true;
+OpenSmartFocuser::OpenSmartFocuser()
+{
+    FI::SetCapability(FOCUSER_CAN_ABS_MOVE | FOCUSER_CAN_REL_MOVE | FOCUSER_CAN_ABORT);
+    setSupportedConnections(CONNECTION_NONE);
+    setVersion(CDRIVER_VERSION_MAJOR, CDRIVER_VERSION_MINOR);
 }
 
-bool OpenSmartFocuserDummy::updateProperties()
+const char *OpenSmartFocuser::getDefaultName()
 {
-	INDI::Focuser::updateProperties();
-
-	if (isConnected())
-		LOG_INFO("Dummy focuser connected: properties are active.");
-	else
-		LOG_INFO("Dummy focuser disconnected: properties are inactive.");
-
-	return true;
+    return "OpenSmartFocuser";
 }
 
-bool OpenSmartFocuserDummy::Connect()
+bool OpenSmartFocuser::initProperties()
 {
-	LOG_INFO("Connect requested. No hardware connection is performed in dummy mode.");
-	return true;
+    INDI::Focuser::initProperties();
+    initCustomProperties();
+    defineProperty(UsbPortTP);
+
+    cachedPosition = static_cast<uint32_t>(FocusAbsPosNP[0].getValue());
+    LOG_INFO("Initialized minimal OpenSmartFocuser USB serial driver.");
+    return true;
 }
 
-bool OpenSmartFocuserDummy::Disconnect()
+bool OpenSmartFocuser::updateProperties()
 {
-	LOG_INFO("Disconnect requested. No hardware teardown is needed in dummy mode.");
-	return true;
+    INDI::Focuser::updateProperties();
+    updateCustomPropertyVisibility();
+
+    if (isConnected())
+    {
+        uint32_t position = cachedPosition;
+        if (queryPosition(position))
+        {
+            cachedPosition = position;
+            FocusAbsPosNP[0].setValue(cachedPosition);
+            FocusAbsPosNP.setState(IPS_OK);
+            FocusAbsPosNP.apply();
+        }
+    }
+
+    return true;
 }
 
-IPState OpenSmartFocuserDummy::MoveAbsFocuser(uint32_t targetTicks)
+bool OpenSmartFocuser::Connect()
 {
-	LOGF_INFO("MoveAbsFocuser requested: target=%u (simulated only).", targetTicks);
+    if (!openSerialPort())
+        return false;
 
-	simulatedPosition = targetTicks;
-	FocusAbsPosNP[0].setValue(simulatedPosition);
-	FocusAbsPosNP.setState(IPS_OK);
-	FocusAbsPosNP.apply();
-	return IPS_OK;
+    std::string response;
+    if (!sendCommand(":PP", "", response) || response != ":PP#")
+    {
+        LOG_ERROR("Connect failed: heartbeat did not return :PP#.");
+        closeSerialPort();
+        return false;
+    }
+
+    publishRawOutput(response);
+    LOG_INFO("Connected over USB serial.");
+    return true;
 }
 
-IPState OpenSmartFocuserDummy::MoveRelFocuser(FocusDirection dir, uint32_t ticks)
+bool OpenSmartFocuser::Disconnect()
 {
-	const char *direction = (dir == FOCUS_INWARD) ? "inward" : "outward";
-	LOGF_INFO("MoveRelFocuser requested: dir=%s ticks=%u (simulated only).", direction, ticks);
-
-	int64_t signedPosition = static_cast<int64_t>(simulatedPosition);
-	signedPosition += (dir == FOCUS_INWARD ? -1 : 1) * static_cast<int64_t>(ticks);
-
-	const int64_t minPos = static_cast<int64_t>(FocusAbsPosNP[0].getMin());
-	const int64_t maxPos = static_cast<int64_t>(FocusAbsPosNP[0].getMax());
-	signedPosition = std::max(minPos, std::min(maxPos, signedPosition));
-
-	return MoveAbsFocuser(static_cast<uint32_t>(signedPosition));
+    closeSerialPort();
+    LOG_INFO("Disconnected USB serial.");
+    return true;
 }
 
-bool OpenSmartFocuserDummy::AbortFocuser()
+IPState OpenSmartFocuser::MoveAbsFocuser(uint32_t targetTicks)
 {
-	LOG_INFO("AbortFocuser requested. No active motion exists in dummy mode.");
-	return true;
+    if (!commandAck(":MA", std::to_string(targetTicks)))
+        return IPS_ALERT;
+
+    cachedPosition = targetTicks;
+    FocusAbsPosNP[0].setValue(cachedPosition);
+    FocusAbsPosNP.setState(IPS_OK);
+    FocusAbsPosNP.apply();
+    return IPS_OK;
 }
 
-bool OpenSmartFocuserDummy::ReverseFocuser(bool enabled)
+IPState OpenSmartFocuser::MoveRelFocuser(FocusDirection dir, uint32_t ticks)
 {
-	reverseEnabled = enabled;
-	LOGF_INFO("ReverseFocuser requested: enabled=%s (simulated only).", reverseEnabled ? "true" : "false");
-	return true;
+    const int32_t signedDelta = (dir == FOCUS_INWARD ? -1 : 1) * static_cast<int32_t>(ticks);
+    if (!commandAck(":MR", std::to_string(signedDelta)))
+        return IPS_ALERT;
+
+    uint32_t position = cachedPosition;
+    if (queryPosition(position))
+        cachedPosition = position;
+
+    FocusAbsPosNP[0].setValue(cachedPosition);
+    FocusAbsPosNP.setState(IPS_OK);
+    FocusAbsPosNP.apply();
+    return IPS_OK;
 }
 
-bool OpenSmartFocuserDummy::SyncFocuser(uint32_t ticks)
+bool OpenSmartFocuser::AbortFocuser()
 {
-	LOGF_INFO("SyncFocuser requested: ticks=%u (simulated only).", ticks);
-
-	simulatedPosition = ticks;
-	FocusAbsPosNP[0].setValue(simulatedPosition);
-	FocusAbsPosNP.setState(IPS_OK);
-	FocusAbsPosNP.apply();
-	return true;
+    return commandAck(":MH", "");
 }
 
-bool OpenSmartFocuserDummy::SetFocuserMaxPosition(uint32_t ticks)
+bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-	LOGF_INFO("SetFocuserMaxPosition requested: max=%u (simulated only).", ticks);
-	INDI::Focuser::SetFocuserMaxPosition(ticks);
+    if (dev == nullptr || std::strcmp(dev, getDeviceName()) != 0)
+        return INDI::Focuser::ISNewSwitch(dev, name, states, names, n);
 
-	if (simulatedPosition > ticks)
-		simulatedPosition = ticks;
+    if (MotorControlSP.isNameMatch(name))
+    {
+        MotorControlSP.update(states, names, n);
 
-	return true;
+        bool ok = false;
+        if (MotorControlSP[0].getState() == ISS_ON)
+            ok = commandAck(":EM", "");
+        else if (MotorControlSP[1].getState() == ISS_ON)
+            ok = commandAck(":DM", "");
+
+        MotorControlSP.reset();
+        MotorControlSP.setState(ok ? IPS_OK : IPS_ALERT);
+        MotorControlSP.apply();
+        return true;
+    }
+
+    if (RebootSP.isNameMatch(name))
+    {
+        RebootSP.update(states, names, n);
+        const bool ok = RebootSP[0].getState() == ISS_ON ? commandAck(":RB", "") : false;
+
+        RebootSP.reset();
+        RebootSP.setState(ok ? IPS_OK : IPS_ALERT);
+        RebootSP.apply();
+        return true;
+    }
+
+    if (RawSendSP.isNameMatch(name))
+    {
+        RawSendSP.update(states, names, n);
+
+        bool ok = false;
+        if (RawSendSP[0].getState() == ISS_ON)
+        {
+            std::string response;
+            const std::string commandText = RawCommandTP[0].getText();
+            ok = sendFrame(commandText) && readFrame(response, SERIAL_TIMEOUT_MS);
+            publishRawOutput(ok ? response : "<no response>");
+        }
+
+        RawSendSP.reset();
+        RawSendSP.setState(ok ? IPS_OK : IPS_ALERT);
+        RawSendSP.apply();
+        return true;
+    }
+
+    return INDI::Focuser::ISNewSwitch(dev, name, states, names, n);
 }
 
-bool OpenSmartFocuserDummy::SetFocuserBacklash(int32_t steps)
+bool OpenSmartFocuser::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
 {
-	LOGF_INFO("SetFocuserBacklash requested: steps=%d (simulated only).", steps);
-	return true;
+    if (dev == nullptr || std::strcmp(dev, getDeviceName()) != 0)
+        return INDI::Focuser::ISNewText(dev, name, texts, names, n);
+
+    if (UsbPortTP.isNameMatch(name))
+    {
+        UsbPortTP.update(texts, names, n);
+        UsbPortTP.setState(IPS_OK);
+        UsbPortTP.apply();
+        return true;
+    }
+
+    if (RawCommandTP.isNameMatch(name))
+    {
+        RawCommandTP.update(texts, names, n);
+        RawCommandTP.setState(IPS_OK);
+        RawCommandTP.apply();
+        return true;
+    }
+
+    return INDI::Focuser::ISNewText(dev, name, texts, names, n);
 }
 
-bool OpenSmartFocuserDummy::SetFocuserBacklashEnabled(bool enabled)
+void OpenSmartFocuser::initCustomProperties()
 {
-	LOGF_INFO("SetFocuserBacklashEnabled requested: enabled=%s (simulated only).", enabled ? "true" : "false");
-	return true;
+    UsbPortTP[0].fill("PORT", "USB Port", "/dev/ttyACM0");
+    UsbPortTP.fill(getDeviceName(), "USB_SERIAL_PORT", "USB Serial", CONNECTION_TAB, IP_RW, 60, IPS_IDLE);
+
+    MotorControlSP[0].fill("ENABLE_MOTOR", "Enable", ISS_OFF);
+    MotorControlSP[1].fill("DISABLE_MOTOR", "Disable", ISS_OFF);
+    MotorControlSP.fill(getDeviceName(), "MOTOR_CONTROL", "Motor", CUSTOM_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    RebootSP[0].fill("REBOOT", "Reboot", ISS_OFF);
+    RebootSP.fill(getDeviceName(), "DEVICE_REBOOT", "Reboot", CUSTOM_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    RawCommandTP[0].fill("COMMAND", "Raw Command", ":GP#");
+    RawCommandTP.fill(getDeviceName(), "RAW_COMMAND", "Raw Command", CUSTOM_TAB, IP_RW, 60, IPS_IDLE);
+
+    RawSendSP[0].fill("SEND", "Send", ISS_OFF);
+    RawSendSP.fill(getDeviceName(), "RAW_SEND", "Send Raw", CUSTOM_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    RawOutputTP[0].fill("OUTPUT", "Raw Output", "");
+    RawOutputTP.fill(getDeviceName(), "RAW_OUTPUT", "Raw Output", CUSTOM_TAB, IP_RO, 60, IPS_IDLE);
 }
 
-bool OpenSmartFocuserDummy::SetFocuserSpeed(int speed)
+void OpenSmartFocuser::updateCustomPropertyVisibility()
 {
-	LOGF_INFO("SetFocuserSpeed requested: speed=%d (simulated only).", speed);
-	return true;
+    if (isConnected())
+    {
+        defineProperty(UsbPortTP);
+        defineProperty(MotorControlSP);
+        defineProperty(RebootSP);
+        defineProperty(RawCommandTP);
+        defineProperty(RawSendSP);
+        defineProperty(RawOutputTP);
+        return;
+    }
+
+    deleteProperty(MotorControlSP.getName());
+    deleteProperty(RebootSP.getName());
+    deleteProperty(RawCommandTP.getName());
+    deleteProperty(RawSendSP.getName());
+    deleteProperty(RawOutputTP.getName());
+    defineProperty(UsbPortTP);
+}
+
+bool OpenSmartFocuser::openSerialPort()
+{
+    closeSerialPort();
+
+    const std::string portPath = UsbPortTP[0].getText();
+    serialFD = ::open(portPath.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (serialFD < 0)
+    {
+        LOGF_ERROR("Failed to open serial port %s: %s", portPath.c_str(), std::strerror(errno));
+        return false;
+    }
+
+    termios tty {};
+    if (tcgetattr(serialFD, &tty) != 0)
+    {
+        LOGF_ERROR("tcgetattr failed on %s: %s", portPath.c_str(), std::strerror(errno));
+        closeSerialPort();
+        return false;
+    }
+
+    cfsetispeed(&tty, SERIAL_BAUD);
+    cfsetospeed(&tty, SERIAL_BAUD);
+
+    tty.c_cflag &= ~PARENB;
+    tty.c_cflag &= ~CSTOPB;
+    tty.c_cflag &= ~CSIZE;
+    tty.c_cflag |= CS8;
+    tty.c_cflag |= CREAD | CLOCAL;
+    tty.c_cflag &= ~CRTSCTS;
+
+    tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY | ICRNL);
+    tty.c_oflag &= ~OPOST;
+
+    tty.c_cc[VMIN] = 0;
+    tty.c_cc[VTIME] = 0;
+
+    if (tcsetattr(serialFD, TCSANOW, &tty) != 0)
+    {
+        LOGF_ERROR("tcsetattr failed on %s: %s", portPath.c_str(), std::strerror(errno));
+        closeSerialPort();
+        return false;
+    }
+
+    const int flags = fcntl(serialFD, F_GETFL, 0);
+    if (flags >= 0)
+        fcntl(serialFD, F_SETFL, flags & ~O_NONBLOCK);
+
+    tcflush(serialFD, TCIOFLUSH);
+    return true;
+}
+
+void OpenSmartFocuser::closeSerialPort()
+{
+    if (serialFD >= 0)
+    {
+        ::close(serialFD);
+        serialFD = -1;
+    }
+}
+
+bool OpenSmartFocuser::sendFrame(const std::string &frame)
+{
+    if (serialFD < 0 || frame.empty())
+        return false;
+
+    const ssize_t written = ::write(serialFD, frame.c_str(), frame.size());
+    if (written != static_cast<ssize_t>(frame.size()))
+    {
+        LOGF_ERROR("Failed to write frame '%s'", frame.c_str());
+        return false;
+    }
+
+    return true;
+}
+
+bool OpenSmartFocuser::readFrame(std::string &frame, int timeoutMs)
+{
+    frame.clear();
+    if (serialFD < 0)
+        return false;
+
+    enum class ParseState
+    {
+        Idle,
+        Command,
+        Debug
+    };
+
+    ParseState state = ParseState::Idle;
+    std::string collected;
+
+    while (true)
+    {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(serialFD, &readfds);
+
+        timeval timeout {};
+        timeout.tv_sec = timeoutMs / 1000;
+        timeout.tv_usec = (timeoutMs % 1000) * 1000;
+
+        const int ready = select(serialFD + 1, &readfds, nullptr, nullptr, &timeout);
+        if (ready <= 0)
+            return false;
+
+        char ch = '\0';
+        const ssize_t bytes = ::read(serialFD, &ch, 1);
+        if (bytes != 1)
+            continue;
+
+        if (state == ParseState::Idle)
+        {
+            if (ch == ':')
+            {
+                state = ParseState::Command;
+                collected.clear();
+                collected.push_back(ch);
+            }
+            else if (ch == '!')
+            {
+                state = ParseState::Debug;
+                collected.clear();
+                collected.push_back(ch);
+            }
+            continue;
+        }
+
+        if (state == ParseState::Debug)
+        {
+            collected.push_back(ch);
+            if (ch == '*')
+            {
+                // Publish debug stream lines for diagnostics, but keep waiting
+                // for a real command response frame.
+                publishRawOutput(collected);
+                collected.clear();
+                state = ParseState::Idle;
+            }
+
+            if (collected.size() > 512)
+            {
+                collected.clear();
+                state = ParseState::Idle;
+            }
+            continue;
+        }
+
+        // ParseState::Command
+        collected.push_back(ch);
+        if (ch == '#')
+        {
+            frame = collected;
+            return true;
+        }
+
+        if (collected.size() > 256)
+        {
+            collected.clear();
+            state = ParseState::Idle;
+        }
+    }
+}
+
+bool OpenSmartFocuser::sendCommand(const std::string &token, const std::string &payload, std::string &response)
+{
+    const std::string frame = token + payload + "#";
+    if (!sendFrame(frame))
+        return false;
+
+    if (!readFrame(response, SERIAL_TIMEOUT_MS))
+        return false;
+
+    publishRawOutput(response);
+    return true;
+}
+
+bool OpenSmartFocuser::commandAck(const std::string &token, const std::string &payload)
+{
+    std::string response;
+    if (!sendCommand(token, payload, response))
+        return false;
+
+    return response == ":ACK#";
+}
+
+bool OpenSmartFocuser::queryPosition(uint32_t &position)
+{
+    std::string response;
+    if (!sendCommand(":GP", "", response))
+        return false;
+
+    if (!startsWith(response, ":GP") || response.size() < 5 || response.back() != '#')
+        return false;
+
+    const std::string payload = response.substr(3, response.size() - 4);
+    uint32_t parsed = 0;
+    if (!parsePositiveInteger(payload, parsed))
+        return false;
+
+    position = parsed;
+    return true;
+}
+
+void OpenSmartFocuser::publishRawOutput(const std::string &output)
+{
+    RawOutputTP[0].setText(output.c_str());
+    RawOutputTP.setState(IPS_OK);
+    RawOutputTP.apply();
 }
