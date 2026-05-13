@@ -175,7 +175,6 @@ void jogForward() {
     return;
   }
   // When jogging forward, we want to prevent moving further if we are already at or beyond the soft endstop limit.
-  DebugSerial::printFramedValue("current position is" , focuserStepper->getCurrentPosition(),"");
   if (!checkSoftEndstops(focuserStepper->getCurrentPosition() + 250)) {
     DebugSerial::printFramedValue("target position is" , focuserStepper->getCurrentPosition() + 250,"target position is outside of soft endstop limits. Jog movement ignored.");
     return;
