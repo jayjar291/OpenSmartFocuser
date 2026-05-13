@@ -11,15 +11,15 @@ const CommandEntry kCommands[] = {
   //:GP# get current position in steps, response :GP<steps>#
   {":GP", SerialCommandHandler::handleGetPosition},
   //:GM# get current movement state, response :GM<state># where state is IDLE, MOVING, or HOMING.
-  {":GM", SerialCommandHandler::handleGetMovement}, // Not implemented yet.
+  {":GM", SerialCommandHandler::handleGetMovement},
   //:GS# get current speed setting, response :GS<speed># where speed is 0-4.
-  {":GS", SerialCommandHandler::handleGetSpeed}, // Not implemented yet.
+  {":GS", SerialCommandHandler::handleGetSpeed}, 
   //:SP<position># override current position in steps, response :ACK#.
-  {":SP", SerialCommandHandler::handleSetPosition}, // Not implemented yet.
+  {":SP", SerialCommandHandler::handleSetPosition}, 
   //:VF# get firmware version, response :VF<version>#.
   {":VF", SerialCommandHandler::handleGetFirmwareVersion}, // Not implemented yet.
   //:PP# heartbeat command, response :PP#.
-  {":PP", SerialCommandHandler::handleHeartbeat}, // Not implemented yet.
+  {":PP", SerialCommandHandler::handleHeartbeat}, 
   //--------------------------------------------------------------homing commands below------------------------------------------------------
   //:HM# start homing sequence, response :ACK#
   {":HM", SerialCommandHandler::handleHome},
@@ -50,13 +50,13 @@ const CommandEntry kCommands[] = {
   {":CU", SerialCommandHandler::handleGetMicrosteps}, 
   //--------------------------------------------------------------movement commands below------------------------------------------------------
   //:MA<positionSteps># move to absolute position in steps, response :ACK#.
-  {":MA", SerialCommandHandler::handleMoveAbsolute}, // Not implemented yet.
+  {":MA", SerialCommandHandler::handleMoveAbsolute}, 
   //:MR<relativeSteps># move relative number of steps, response :ACK#.
-  {":MR", SerialCommandHandler::handleMoveRelative}, // Not implemented yet.
+  {":MR", SerialCommandHandler::handleMoveRelative}, 
   //:MH# stop motion immediately, response :ACK#.
-  {":MH", SerialCommandHandler::handleHalt}, // Not implemented yet.
+  {":MH", SerialCommandHandler::handleHalt}, 
   //:MS<speed 0-4># set movement speed, response :ACK#.
-  {":MS", SerialCommandHandler::handleSetSpeed}, // Not implemented yet.
+  {":MS", SerialCommandHandler::handleSetSpeed}, 
   //--------------------------------------------------------------addon commands below------------------------------------------------------
   // TODO addon commands for sensors, auxiliary outputs, etc.
 };
