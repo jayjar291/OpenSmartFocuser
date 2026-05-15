@@ -18,6 +18,7 @@ static std::unique_ptr<OpenSmartFocuser> openSmartFocuser(new OpenSmartFocuser()
 namespace
 {
 
+// UI tab names and protocol/runtime constants used across the driver.
 constexpr const char *CUSTOM_TAB = "Custom";
 constexpr const char *MONITOR_TAB = "Serial Monitor";
 constexpr int SERIAL_BAUD = B115200;
@@ -25,6 +26,7 @@ constexpr int SERIAL_TIMEOUT_MS = 1500;
 constexpr uint32_t MAX_SPEED_INDEX = 4;
 constexpr size_t SERIAL_MONITOR_MAX_LINES = 80;
 
+// Parse a full unsigned integer payload and reject partial/invalid conversions.
 bool parsePositiveInteger(const std::string &text, uint32_t &value)
 {
     if (text.empty())
@@ -45,6 +47,7 @@ bool startsWith(const std::string &text, const std::string &prefix)
     return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
 }
 
+// Escape non-printable bytes so logs and monitor output remain readable.
 std::string escapeFrameForLog(const std::string &text)
 {
     static constexpr char HEX[] = "0123456789ABCDEF";
@@ -70,6 +73,8 @@ std::string escapeFrameForLog(const std::string &text)
 
 } // namespace
 
+// Driver constructor: declare focuser capabilities and disable built-in connection plugins
+// because transport is handled manually in this class.
 OpenSmartFocuser::OpenSmartFocuser()
 {
     FI::SetCapability(FOCUSER_CAN_ABS_MOVE | FOCUSER_CAN_REL_MOVE | FOCUSER_CAN_ABORT);
@@ -82,6 +87,7 @@ const char *OpenSmartFocuser::getDefaultName()
     return "OpenSmartFocuser";
 }
 
+// Initialize base focuser interface and custom properties owned by this driver.
 bool OpenSmartFocuser::initProperties()
 {
     INDI::Focuser::initProperties();
@@ -93,6 +99,7 @@ bool OpenSmartFocuser::initProperties()
     return true;
 }
 
+// Keep dynamic properties in sync with connection state and refresh absolute position.
 bool OpenSmartFocuser::updateProperties()
 {
     INDI::Focuser::updateProperties();
@@ -113,6 +120,7 @@ bool OpenSmartFocuser::updateProperties()
     return true;
 }
 
+// Open serial transport, verify heartbeat, and synchronize runtime UI state.
 bool OpenSmartFocuser::Connect()
 {
     if (!openSerialPort())
@@ -138,6 +146,7 @@ bool OpenSmartFocuser::Connect()
     return true;
 }
 
+// Close serial transport and leave properties to be hidden by updateProperties().
 bool OpenSmartFocuser::Disconnect()
 {
     closeSerialPort();
@@ -145,6 +154,8 @@ bool OpenSmartFocuser::Disconnect()
     return true;
 }
 
+// Absolute move handler from INDI clients.
+// Sends :MA<target># and updates cached/displayed position on success.
 IPState OpenSmartFocuser::MoveAbsFocuser(uint32_t targetTicks)
 {
     if (!commandAck(":MA", std::to_string(targetTicks)))
@@ -157,6 +168,8 @@ IPState OpenSmartFocuser::MoveAbsFocuser(uint32_t targetTicks)
     return IPS_OK;
 }
 
+// Relative move handler from INDI clients.
+// Converts IN/OUT direction to signed delta and sends :MR<delta>#.
 IPState OpenSmartFocuser::MoveRelFocuser(FocusDirection dir, uint32_t ticks)
 {
     const int32_t signedDelta = (dir == FOCUS_INWARD ? -1 : 1) * static_cast<int32_t>(ticks);
@@ -173,11 +186,13 @@ IPState OpenSmartFocuser::MoveRelFocuser(FocusDirection dir, uint32_t ticks)
     return IPS_OK;
 }
 
+// Abort current motion via :MH#.
 bool OpenSmartFocuser::AbortFocuser()
 {
     return commandAck(":MH", "");
 }
 
+// Dispatch all custom switch properties (motor, home, speed, reboot, raw send, monitor clear).
 bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
     if (dev == nullptr || std::strcmp(dev, getDeviceName()) != 0)
@@ -185,6 +200,7 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
 
     if (MotorControlSP.isNameMatch(name))
     {
+        // Motor power/state control: :EM# enable, :DM# disable.
         MotorControlSP.update(states, names, n);
 
         bool ok = false;
@@ -201,6 +217,7 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
 
     if (HomeSP.isNameMatch(name))
     {
+        // Start firmware homing routine.
         HomeSP.update(states, names, n);
         const bool ok = HomeSP[0].getState() == ISS_ON ? commandAck(":HM", "") : false;
 
@@ -212,6 +229,7 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
 
     if (SpeedPresetSP.isNameMatch(name))
     {
+        // Map selected speed radio button to firmware speed command :MS<0..4>#.
         SpeedPresetSP.update(states, names, n);
 
         int selectedIndex = -1;
@@ -237,6 +255,7 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
 
     if (RebootSP.isNameMatch(name))
     {
+        // Trigger firmware reboot command.
         RebootSP.update(states, names, n);
         const bool ok = RebootSP[0].getState() == ISS_ON ? commandAck(":RB", "") : false;
 
@@ -248,6 +267,7 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
 
     if (RawSendSP.isNameMatch(name))
     {
+        // Manual raw-frame send for debugging protocol behavior from INDI UI.
         RawSendSP.update(states, names, n);
 
         bool ok = false;
@@ -267,6 +287,7 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
 
     if (SerialMonitorClearSP.isNameMatch(name))
     {
+        // Clear rolling serial monitor transcript from UI and internal buffer.
         SerialMonitorClearSP.update(states, names, n);
         const bool clearRequested = SerialMonitorClearSP[0].getState() == ISS_ON;
         if (clearRequested)
@@ -281,6 +302,7 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
     return INDI::Focuser::ISNewSwitch(dev, name, states, names, n);
 }
 
+// Dispatch editable text properties (port path and manual raw command text).
 bool OpenSmartFocuser::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
 {
     if (dev == nullptr || std::strcmp(dev, getDeviceName()) != 0)
@@ -305,6 +327,7 @@ bool OpenSmartFocuser::ISNewText(const char *dev, const char *name, char *texts[
     return INDI::Focuser::ISNewText(dev, name, texts, names, n);
 }
 
+// Declare all custom properties and their tabs/options.
 void OpenSmartFocuser::initCustomProperties()
 {
     UsbPortTP[0].fill("PORT", "USB Port", "/dev/ttyACM0");
@@ -343,6 +366,7 @@ void OpenSmartFocuser::initCustomProperties()
     SerialMonitorClearSP.fill(getDeviceName(), "SERIAL_MONITOR_CLEAR", "Serial Monitor", MONITOR_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
 }
 
+// Define custom properties only while connected, except USB port which stays visible.
 void OpenSmartFocuser::updateCustomPropertyVisibility()
 {
     if (isConnected())
@@ -372,6 +396,7 @@ void OpenSmartFocuser::updateCustomPropertyVisibility()
     defineProperty(UsbPortTP);
 }
 
+// Open/configure POSIX serial device with 115200 8N1 raw mode.
 bool OpenSmartFocuser::openSerialPort()
 {
     closeSerialPort();
@@ -424,6 +449,7 @@ bool OpenSmartFocuser::openSerialPort()
     return true;
 }
 
+// Close serial descriptor if currently open.
 void OpenSmartFocuser::closeSerialPort()
 {
     if (serialFD >= 0)
@@ -433,6 +459,7 @@ void OpenSmartFocuser::closeSerialPort()
     }
 }
 
+// Write one protocol frame to firmware and mirror TX data into monitor/log.
 bool OpenSmartFocuser::sendFrame(const std::string &frame)
 {
     if (serialFD < 0 || frame.empty())
@@ -451,6 +478,8 @@ bool OpenSmartFocuser::sendFrame(const std::string &frame)
     return true;
 }
 
+// Read one command response frame while also consuming async debug frames.
+// Command frames are :...# and debug frames are !...*.
 bool OpenSmartFocuser::readFrame(std::string &frame, int timeoutMs)
 {
     frame.clear();
@@ -488,6 +517,7 @@ bool OpenSmartFocuser::readFrame(std::string &frame, int timeoutMs)
 
         if (state == ParseState::Idle)
         {
+            // Wait for explicit frame start markers.
             if (ch == ':')
             {
                 state = ParseState::Command;
@@ -505,6 +535,7 @@ bool OpenSmartFocuser::readFrame(std::string &frame, int timeoutMs)
 
         if (state == ParseState::Debug)
         {
+            // Consume firmware debug stream and publish it immediately.
             collected.push_back(ch);
             if (ch == '*')
             {
@@ -526,6 +557,7 @@ bool OpenSmartFocuser::readFrame(std::string &frame, int timeoutMs)
         }
 
         // ParseState::Command
+        // Collect protocol reply until terminating '#'.
         collected.push_back(ch);
         if (ch == '#')
         {
@@ -543,6 +575,7 @@ bool OpenSmartFocuser::readFrame(std::string &frame, int timeoutMs)
     }
 }
 
+// Send command token/payload as :<token><payload># and wait for one reply frame.
 bool OpenSmartFocuser::sendCommand(const std::string &token, const std::string &payload, std::string &response)
 {
     const std::string frame = token + payload + "#";
@@ -556,6 +589,7 @@ bool OpenSmartFocuser::sendCommand(const std::string &token, const std::string &
     return true;
 }
 
+// Helper for commands that are expected to return :ACK#.
 bool OpenSmartFocuser::commandAck(const std::string &token, const std::string &payload)
 {
     std::string response;
@@ -565,6 +599,7 @@ bool OpenSmartFocuser::commandAck(const std::string &token, const std::string &p
     return response == ":ACK#";
 }
 
+// Query current absolute position via :GP# and parse :GP<ticks>#.
 bool OpenSmartFocuser::queryPosition(uint32_t &position)
 {
     std::string response;
@@ -583,6 +618,7 @@ bool OpenSmartFocuser::queryPosition(uint32_t &position)
     return true;
 }
 
+// Query current speed preset index via :GS# and parse :GS<index>#.
 bool OpenSmartFocuser::querySpeedIndex(uint32_t &speedIndex)
 {
     std::string response;
@@ -601,6 +637,7 @@ bool OpenSmartFocuser::querySpeedIndex(uint32_t &speedIndex)
     return true;
 }
 
+// Update speed selector radio switch to match current firmware speed index.
 void OpenSmartFocuser::updateSpeedSelection(uint32_t speedIndex)
 {
     if (speedIndex > MAX_SPEED_INDEX)
@@ -612,6 +649,7 @@ void OpenSmartFocuser::updateSpeedSelection(uint32_t speedIndex)
     SpeedPresetSP.apply();
 }
 
+// Append one line to the rolling serial monitor and mirror it to INDI log output.
 void OpenSmartFocuser::appendSerialMonitorLine(const std::string &prefix, const std::string &payload)
 {
     const std::string line = prefix + " len=" + std::to_string(payload.size()) + " data=" + payload;
@@ -633,6 +671,7 @@ void OpenSmartFocuser::appendSerialMonitorLine(const std::string &prefix, const 
     SerialMonitorTP.apply();
 }
 
+// Clear serial monitor buffer and UI text property.
 void OpenSmartFocuser::clearSerialMonitor()
 {
     serialMonitorLines.clear();
@@ -641,6 +680,7 @@ void OpenSmartFocuser::clearSerialMonitor()
     SerialMonitorTP.apply();
 }
 
+// Publish single latest raw output line for quick diagnostics in Custom tab.
 void OpenSmartFocuser::publishRawOutput(const std::string &output)
 {
     RawOutputTP[0].setText(output.c_str());
