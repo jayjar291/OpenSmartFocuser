@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cctype>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -18,8 +19,11 @@ namespace
 {
 
 constexpr const char *CUSTOM_TAB = "Custom";
+constexpr const char *MONITOR_TAB = "Serial Monitor";
 constexpr int SERIAL_BAUD = B115200;
 constexpr int SERIAL_TIMEOUT_MS = 1500;
+constexpr uint32_t MAX_SPEED_INDEX = 4;
+constexpr size_t SERIAL_MONITOR_MAX_LINES = 80;
 
 bool parsePositiveInteger(const std::string &text, uint32_t &value)
 {
@@ -39,6 +43,29 @@ bool parsePositiveInteger(const std::string &text, uint32_t &value)
 bool startsWith(const std::string &text, const std::string &prefix)
 {
     return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
+}
+
+std::string escapeFrameForLog(const std::string &text)
+{
+    static constexpr char HEX[] = "0123456789ABCDEF";
+    std::string escaped;
+    escaped.reserve(text.size() * 4);
+
+    for (unsigned char ch : text)
+    {
+        if (std::isprint(ch) != 0)
+        {
+            escaped.push_back(static_cast<char>(ch));
+            continue;
+        }
+
+        escaped.push_back('\\');
+        escaped.push_back('x');
+        escaped.push_back(HEX[(ch >> 4) & 0x0F]);
+        escaped.push_back(HEX[ch & 0x0F]);
+    }
+
+    return escaped;
 }
 
 } // namespace
@@ -91,6 +118,8 @@ bool OpenSmartFocuser::Connect()
     if (!openSerialPort())
         return false;
 
+    clearSerialMonitor();
+
     std::string response;
     if (!sendCommand(":PP", "", response) || response != ":PP#")
     {
@@ -100,6 +129,11 @@ bool OpenSmartFocuser::Connect()
     }
 
     publishRawOutput(response);
+
+    uint32_t speedIndex = 0;
+    if (querySpeedIndex(speedIndex))
+        updateSpeedSelection(speedIndex);
+
     LOG_INFO("Connected over USB serial.");
     return true;
 }
@@ -165,6 +199,42 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
         return true;
     }
 
+    if (HomeSP.isNameMatch(name))
+    {
+        HomeSP.update(states, names, n);
+        const bool ok = HomeSP[0].getState() == ISS_ON ? commandAck(":HM", "") : false;
+
+        HomeSP.reset();
+        HomeSP.setState(ok ? IPS_OK : IPS_ALERT);
+        HomeSP.apply();
+        return true;
+    }
+
+    if (SpeedPresetSP.isNameMatch(name))
+    {
+        SpeedPresetSP.update(states, names, n);
+
+        int selectedIndex = -1;
+        for (int i = 0; i < 5; ++i)
+        {
+            if (SpeedPresetSP[i].getState() == ISS_ON)
+            {
+                selectedIndex = i;
+                break;
+            }
+        }
+
+        const bool ok = selectedIndex >= 0 && commandAck(":MS", std::to_string(selectedIndex));
+        if (ok)
+            updateSpeedSelection(static_cast<uint32_t>(selectedIndex));
+        else
+            SpeedPresetSP.reset();
+
+        SpeedPresetSP.setState(ok ? IPS_OK : IPS_ALERT);
+        SpeedPresetSP.apply();
+        return true;
+    }
+
     if (RebootSP.isNameMatch(name))
     {
         RebootSP.update(states, names, n);
@@ -192,6 +262,19 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
         RawSendSP.reset();
         RawSendSP.setState(ok ? IPS_OK : IPS_ALERT);
         RawSendSP.apply();
+        return true;
+    }
+
+    if (SerialMonitorClearSP.isNameMatch(name))
+    {
+        SerialMonitorClearSP.update(states, names, n);
+        const bool clearRequested = SerialMonitorClearSP[0].getState() == ISS_ON;
+        if (clearRequested)
+            clearSerialMonitor();
+
+        SerialMonitorClearSP.reset();
+        SerialMonitorClearSP.setState(clearRequested ? IPS_OK : IPS_IDLE);
+        SerialMonitorClearSP.apply();
         return true;
     }
 
@@ -225,11 +308,21 @@ bool OpenSmartFocuser::ISNewText(const char *dev, const char *name, char *texts[
 void OpenSmartFocuser::initCustomProperties()
 {
     UsbPortTP[0].fill("PORT", "USB Port", "/dev/ttyACM0");
-    UsbPortTP.fill(getDeviceName(), "USB_SERIAL_PORT", "USB Serial", CONNECTION_TAB, IP_RW, 60, IPS_IDLE);
+    UsbPortTP.fill(getDeviceName(), "USB_SERIAL_PORT", "USB Serial", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
+
+    SpeedPresetSP[0].fill("SPEED_FINE", "Fine", ISS_OFF);
+    SpeedPresetSP[1].fill("SPEED_SLOW", "Slow", ISS_ON);
+    SpeedPresetSP[2].fill("SPEED_MED", "Medium", ISS_OFF);
+    SpeedPresetSP[3].fill("SPEED_FAST", "Fast", ISS_OFF);
+    SpeedPresetSP[4].fill("SPEED_MAX", "Max", ISS_OFF);
+    SpeedPresetSP.fill(getDeviceName(), "SPEED_PRESET", "Speed", CUSTOM_TAB, IP_RW, ISR_1OFMANY, 0, IPS_IDLE);
 
     MotorControlSP[0].fill("ENABLE_MOTOR", "Enable", ISS_OFF);
     MotorControlSP[1].fill("DISABLE_MOTOR", "Disable", ISS_OFF);
     MotorControlSP.fill(getDeviceName(), "MOTOR_CONTROL", "Motor", CUSTOM_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    HomeSP[0].fill("START_HOME", "Home", ISS_OFF);
+    HomeSP.fill(getDeviceName(), "HOME_CONTROL", "Home", CUSTOM_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
 
     RebootSP[0].fill("REBOOT", "Reboot", ISS_OFF);
     RebootSP.fill(getDeviceName(), "DEVICE_REBOOT", "Reboot", CUSTOM_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
@@ -242,6 +335,12 @@ void OpenSmartFocuser::initCustomProperties()
 
     RawOutputTP[0].fill("OUTPUT", "Raw Output", "");
     RawOutputTP.fill(getDeviceName(), "RAW_OUTPUT", "Raw Output", CUSTOM_TAB, IP_RO, 60, IPS_IDLE);
+
+    SerialMonitorTP[0].fill("MONITOR", "Monitor", "");
+    SerialMonitorTP.fill(getDeviceName(), "SERIAL_MONITOR", "Serial Monitor", MONITOR_TAB, IP_RO, 60, IPS_IDLE);
+
+    SerialMonitorClearSP[0].fill("CLEAR", "Clear", ISS_OFF);
+    SerialMonitorClearSP.fill(getDeviceName(), "SERIAL_MONITOR_CLEAR", "Serial Monitor", MONITOR_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
 }
 
 void OpenSmartFocuser::updateCustomPropertyVisibility()
@@ -249,19 +348,27 @@ void OpenSmartFocuser::updateCustomPropertyVisibility()
     if (isConnected())
     {
         defineProperty(UsbPortTP);
+        defineProperty(SpeedPresetSP);
         defineProperty(MotorControlSP);
+        defineProperty(HomeSP);
         defineProperty(RebootSP);
         defineProperty(RawCommandTP);
         defineProperty(RawSendSP);
         defineProperty(RawOutputTP);
+        defineProperty(SerialMonitorTP);
+        defineProperty(SerialMonitorClearSP);
         return;
     }
 
+    deleteProperty(SpeedPresetSP.getName());
     deleteProperty(MotorControlSP.getName());
+    deleteProperty(HomeSP.getName());
     deleteProperty(RebootSP.getName());
     deleteProperty(RawCommandTP.getName());
     deleteProperty(RawSendSP.getName());
     deleteProperty(RawOutputTP.getName());
+    deleteProperty(SerialMonitorTP.getName());
+    deleteProperty(SerialMonitorClearSP.getName());
     defineProperty(UsbPortTP);
 }
 
@@ -331,6 +438,9 @@ bool OpenSmartFocuser::sendFrame(const std::string &frame)
     if (serialFD < 0 || frame.empty())
         return false;
 
+    const std::string escapedFrame = escapeFrameForLog(frame);
+    appendSerialMonitorLine("TX", escapedFrame);
+
     const ssize_t written = ::write(serialFD, frame.c_str(), frame.size());
     if (written != static_cast<ssize_t>(frame.size()))
     {
@@ -398,6 +508,8 @@ bool OpenSmartFocuser::readFrame(std::string &frame, int timeoutMs)
             collected.push_back(ch);
             if (ch == '*')
             {
+                const std::string escapedDebugFrame = escapeFrameForLog(collected);
+                appendSerialMonitorLine("DBG", escapedDebugFrame);
                 // Publish debug stream lines for diagnostics, but keep waiting
                 // for a real command response frame.
                 publishRawOutput(collected);
@@ -418,6 +530,8 @@ bool OpenSmartFocuser::readFrame(std::string &frame, int timeoutMs)
         if (ch == '#')
         {
             frame = collected;
+            const std::string escapedFrame = escapeFrameForLog(frame);
+            appendSerialMonitorLine("RX", escapedFrame);
             return true;
         }
 
@@ -467,6 +581,64 @@ bool OpenSmartFocuser::queryPosition(uint32_t &position)
 
     position = parsed;
     return true;
+}
+
+bool OpenSmartFocuser::querySpeedIndex(uint32_t &speedIndex)
+{
+    std::string response;
+    if (!sendCommand(":GS", "", response))
+        return false;
+
+    if (!startsWith(response, ":GS") || response.size() < 5 || response.back() != '#')
+        return false;
+
+    const std::string payload = response.substr(3, response.size() - 4);
+    uint32_t parsed = 0;
+    if (!parsePositiveInteger(payload, parsed) || parsed > MAX_SPEED_INDEX)
+        return false;
+
+    speedIndex = parsed;
+    return true;
+}
+
+void OpenSmartFocuser::updateSpeedSelection(uint32_t speedIndex)
+{
+    if (speedIndex > MAX_SPEED_INDEX)
+        return;
+
+    SpeedPresetSP.reset();
+    SpeedPresetSP[speedIndex].setState(ISS_ON);
+    SpeedPresetSP.setState(IPS_OK);
+    SpeedPresetSP.apply();
+}
+
+void OpenSmartFocuser::appendSerialMonitorLine(const std::string &prefix, const std::string &payload)
+{
+    const std::string line = prefix + " len=" + std::to_string(payload.size()) + " data=" + payload;
+    LOGF_INFO("%s", line.c_str());
+
+    serialMonitorLines.push_back(line);
+    while (serialMonitorLines.size() > SERIAL_MONITOR_MAX_LINES)
+        serialMonitorLines.pop_front();
+
+    std::string joined;
+    for (const auto &entry : serialMonitorLines)
+    {
+        joined += entry;
+        joined += '\n';
+    }
+
+    SerialMonitorTP[0].setText(joined.c_str());
+    SerialMonitorTP.setState(IPS_OK);
+    SerialMonitorTP.apply();
+}
+
+void OpenSmartFocuser::clearSerialMonitor()
+{
+    serialMonitorLines.clear();
+    SerialMonitorTP[0].setText("");
+    SerialMonitorTP.setState(IPS_OK);
+    SerialMonitorTP.apply();
 }
 
 void OpenSmartFocuser::publishRawOutput(const std::string &output)
