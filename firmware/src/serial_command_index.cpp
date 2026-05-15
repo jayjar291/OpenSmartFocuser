@@ -14,6 +14,8 @@ const CommandEntry kCommands[] = {
   {":GM", SerialCommandHandler::handleGetMovement},
   //:GS# get current speed setting, response :GS<speed># where speed is 0-4.
   {":GS", SerialCommandHandler::handleGetSpeed}, 
+  //:GL# get limits max and min in steps, response :GL<minSteps>,<maxSteps>#.
+  {":GL", SerialCommandHandler::handleGetLimits},
   //:SP<position># override current position in steps, response :ACK#.
   {":SP", SerialCommandHandler::handleSetPosition}, 
   //:VF# get firmware version, response :VF<version>#.

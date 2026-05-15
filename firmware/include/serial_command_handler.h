@@ -26,6 +26,7 @@ void handleGetMovement(const char* parameters, size_t parametersLength);
 void handleGetSpeed(const char* parameters, size_t parametersLength);
 void handleSetPosition(const char* parameters, size_t parametersLength);
 void handleGetFirmwareVersion(const char* parameters, size_t parametersLength);
+void handleGetLimits(const char* parameters, size_t parametersLength);
 void handleHeartbeat(const char* parameters, size_t parametersLength);
 void handleMoveAbsolute(const char* parameters, size_t parametersLength);
 void handleMoveRelative(const char* parameters, size_t parametersLength);

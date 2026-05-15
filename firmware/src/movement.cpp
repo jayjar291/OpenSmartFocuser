@@ -384,7 +384,8 @@ void startHoming() {
 
   focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
   DebugSerial::printFramed("About to call runBackward()...");
-  focuserStepper->moveTo(-100000); // Move a large distance backward to ensure we hit the endstop. The actual position will be reset to 0 when the endstop is triggered.
+  focuserStepper->runBackward();
+  //focuserStepper->moveTo(-100000); // Move a large distance backward to ensure we hit the endstop. The actual position will be reset to 0 when the endstop is triggered.
   DebugSerial::printFramedValue("Motor is running after runBackward(): ", focuserStepper->isRunning(), "");
 }
 
@@ -411,7 +412,10 @@ void processEndstopEvent() {
   if (focuserStepper == nullptr) {
     return;
   }
-  focuserStepper->forceStopAndNewPosition(0);
+
+  //
+  //focuserStepper->forceStopAndNewPosition(0);
+  
   jogActive = false;
   touchMotorActivity();
   DebugSerial::printFramed("Endstop interrupt triggered. Movement halted.");
@@ -571,6 +575,11 @@ MovementStatus getMovementStatus() {
     return MovementStatus::Moving;
   }
   return MovementStatus::Idle;
+}
+
+void getLimits(int32_t& minSteps, int32_t& maxSteps) {
+  minSteps = FOCUSER_SOFT_MIN_STEPS;
+  maxSteps = FOCUSER_SOFT_MAX_STEPS;
 }
 
 } // namespace Movement

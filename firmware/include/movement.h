@@ -56,5 +56,6 @@ uint16_t getDriverCurrentMa();
 void processEndstopEvent();
 void updateSoftEndstops();
 bool checkSoftEndstops(int32_t targetSteps);
+void getLimits(int32_t& minSteps, int32_t& maxSteps);
 
 } // namespace Movement

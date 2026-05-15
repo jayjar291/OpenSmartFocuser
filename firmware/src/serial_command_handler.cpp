@@ -170,6 +170,20 @@ void handleGetPosition(const char* parameters, size_t parametersLength) {
   gSerial->println("#");
 }
 
+//:GL# get limits max and min in steps, response :GL<minSteps>,<maxSteps>#.
+void handleGetLimits(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  int32_t minSteps = 0;
+  int32_t maxSteps = 0;
+  Movement::getLimits(minSteps, maxSteps);
+  gSerial->print(":GL");
+  gSerial->print(minSteps);
+  gSerial->print(",");
+  gSerial->print(maxSteps);
+  gSerial->println("#");
+}
+
 //:SP<positionSteps># override current position in steps, response :ACK#.
 void handleSetPosition(const char* parameters, size_t parametersLength) {
   char payload[kMaxPayloadLength] = {0};
