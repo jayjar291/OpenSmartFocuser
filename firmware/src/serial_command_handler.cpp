@@ -1,4 +1,5 @@
 #include "serial_command_handler.h"
+#include "addons.h"
 #include "serial_command_index.h"
 #include "movement.h"
 #include "debug_serial.h"
@@ -561,6 +562,87 @@ void handleEnableMotor(const char* parameters, size_t parametersLength) {
     return;
   }
   Movement::setMotorEnabledState(true);
+  gSerial->println(kResponseAck);
+}
+
+void handleQueryAddons(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+
+  uint8_t addonCount = 0;
+  if (Addons::hasAddon(Addons::AddonType::Shutter)) {
+    gSerial->println(":AQShutter#");
+    ++addonCount;
+  }
+
+  if (Addons::hasAddon(Addons::AddonType::FlatPanel)) {
+    gSerial->println(":AQFlatPanel#");
+    ++addonCount;
+  }
+
+  if (addonCount == 0) {
+    gSerial->println(":AQNONE#");
+    return;
+  }
+
+  if (addonCount > 1) {
+    gSerial->println(":AQ!#");
+  }
+}
+
+void handleSetFlatPanelBrightness(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  int32_t brightness = 0;
+  if (!readInt32Arg(args, 0, brightness)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  if (brightness < 0 || brightness > 255) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  if (!Addons::hasAddon(Addons::AddonType::FlatPanel) || !Addons::isInitialized()) {
+    gSerial->println(kResponseAddonUnavalable);
+    return;
+  }
+
+  Addons::SetFlatPanelBrightness(static_cast<uint8_t>(brightness));
+  gSerial->println(kResponseAck);
+}
+
+void handleSetShutterPosition(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  int32_t position = 0;
+  if (!readInt32Arg(args, 0, position)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  if (position < 0 || position > 180) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  if (!Addons::hasAddon(Addons::AddonType::Shutter) || !Addons::isInitialized()) {
+    gSerial->println(kResponseAddonUnavalable);
+    return;
+  }
+
+  Addons::SetShutterPosition(static_cast<uint8_t>(position));
   gSerial->println(kResponseAck);
 }
 

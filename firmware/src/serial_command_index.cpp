@@ -69,7 +69,12 @@ const CommandEntry kCommands[] = {
   //:EM# enable motor, response :ACK#.
   {":EM", SerialCommandHandler::handleEnableMotor},
   //--------------------------------------------------------------addon commands below------------------------------------------------------
-  // TODO addon commands for sensors, auxiliary outputs, etc.
+  //:AQ# Queries add-ons, response :AQ<Type># where type is the add-on type or NONE if no add-on is present. ends with :AQ!# if multiple add-ons are present.
+  {":AQ", SerialCommandHandler::handleQueryAddons}, 
+  //:FP<Brightness># set Flat panel brightness, response :ACK#. Brightness is 0-255 0 is off, 255 is max brightness
+  {":FP", SerialCommandHandler::handleSetFlatPanelBrightness},
+  //:SV<POSITION># set shutter position, response :ACK#. Position is 0-180, 0 is closed, 180 is open.
+  {":SV", SerialCommandHandler::handleSetShutterPosition},
 };
 
 } // namespace

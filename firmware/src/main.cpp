@@ -3,6 +3,7 @@
 #include <TMCStepper.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include "addons.h"
 #include "config.h"
 #include "debug_serial.h"
 #include "menu.h"
@@ -63,6 +64,12 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   SerialCommandHandler::begin(Serial);
+
+  Addons::begin();
+  if (Addons::isEnabled()) {
+    DebugSerial::printFramed("Setup: initialize addons");
+    Addons::initializeAddons();
+  }
 
   initMenu();
 
