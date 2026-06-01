@@ -52,6 +52,8 @@ char kSettingBrightness[] = "Brightness";
 char kSettingTmcDriver[] = "TMC Driver";
 char kSettingMicrosteps[] = "Microsteps";
 char kSettingSpreadCycle[] = "SpreadCycle";
+char kMainMenuToggleFlatFrame[] = "Toggle Flat Panel";
+char kMainMenuToggleShutter[] = "Toggle Shutter";
 
 const char* speeds[] = {"Fine", "Slow", "Medium", "Fast", "Max"};
 

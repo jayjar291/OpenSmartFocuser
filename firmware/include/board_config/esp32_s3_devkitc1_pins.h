@@ -40,11 +40,11 @@
 /*
 * Shutter servo control pin.
 */
-#define PIN_SHUTTER_SERVO           46
+#define PIN_SHUTTER_SERVO           18
 
 /*
 * Flat frame panel control pin.
 */
-#define PIN_FLAT_FRAME_PANEL        3
+#define PIN_FLAT_FRAME_PANEL        46
 #define Flat_Frame_Neopixel_Count 33
 #define Flat_Frame_Neopixel true

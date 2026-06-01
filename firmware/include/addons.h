@@ -17,8 +17,12 @@ bool isEnabled();
 bool isInitialized();
 bool hasAddon(AddonType type);
 void initializeAddons();
+void detachServos();
 
 void SetFlatPanelBrightness(uint8_t brightness);
 void SetShutterPosition(uint8_t position);
+
+void toggleFlatPanel();
+void toggleShutter();
 
 } // namespace Addons

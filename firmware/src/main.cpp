@@ -45,13 +45,13 @@ static void motorTask(void* /*param*/) {
     Movement::updateHoming();
     Movement::updatePositionPersistence();
     Movement::updateMotorIdleTimeout();
-
+    
     const uint32_t now = millis();
     if (now - lastHealthCheckMs >= kHealthCheckIntervalMs) {
       Movement::healthCheck();
       lastHealthCheckMs = now;
     }
-
+    
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
@@ -65,34 +65,50 @@ void setup() {
   delay(100);
   SerialCommandHandler::begin(Serial);
 
+  DebugSerial::printFramed("Setup: begin");
+  DebugSerial::printFramedValue("Free heap at startup (bytes) ", ESP.getFreeHeap(), " ");
+
+  
+  initMenu();
+  
   Addons::begin();
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
   if (Addons::isEnabled()) {
     DebugSerial::printFramed("Setup: initialize addons");
     Addons::initializeAddons();
   }
 
-  initMenu();
 
   DebugSerial::printFramed("Setup: initializeDriver");
   Movement::initializeDriver();
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
 
+  
   DebugSerial::printFramed("Setup: preset begin");
   preset::begin();
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
+
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
+
 
   // Core 0 handles motor/homing/endstop tasks. loop() remains on Core 1 for UI/menu.
   DebugSerial::printFramed("Setup: create motor task");
+
   BaseType_t taskCreated = xTaskCreatePinnedToCore(
-      motorTask,
-      "motorTask",
-      4096,
-      nullptr,
-      2,
-      &motorTaskHandle,
-      0);
-  if (taskCreated != pdPASS) {
-    DebugSerial::printFramed("Failed to start motor task on Core 0");
-    return;
-  }
+    motorTask,
+    "motorTask",
+    4096,
+    nullptr,
+    2,
+    &motorTaskHandle,
+    0);
+    if (taskCreated != pdPASS) {
+      DebugSerial::printFramed("Failed to start motor task on Core 0");
+      return;
+    }
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
+
+
 
   DebugSerial::printFramed("Setup: done");
 }
@@ -106,4 +122,5 @@ void loop() {
   SerialCommandHandler::poll();
   Movement::setSpeedSetting(getFocusSpeedSetting());
   analogWrite(PIN_LCD_BL, getBrightnessSetting() * 255 / 100);
+  Addons::detachServos(); // Detach servos if they have been idle for a while to reduce power consumption and prevent jitter
 }

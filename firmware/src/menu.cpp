@@ -1,5 +1,5 @@
 #include "menu.h"
-
+#include "addons.h"
 #include <cstring>
 #include "config.h"
 #include "menu_strings.h"
@@ -250,6 +250,19 @@ void startHomingAction() {
     Movement::startHoming();
 }
 
+#if HAS_FLAT_FRAME_PANEL
+void toggleFlatFrameAction() {
+  Addons::toggleFlatPanel();
+}
+#endif
+
+
+#if HAS_SHUTTER
+void toggleShutterAction() {
+  Addons::toggleShutter();
+}
+#endif
+
 } // namespace
 
 void notifyPresetMenuDataChanged() {
@@ -303,6 +316,12 @@ void initMenu() {
   mainMenu.addItem(MenuStrings::kMainMenuHome, nullptr, startHomingAction);
   mainMenu.addItem(MenuStrings::kMainMenuSettings, &settingsScreen);
   mainMenu.addItem(MenuStrings::kMainMenuToggleMotor, nullptr, toggleMotorEnabledAction);
+  #if HAS_FLAT_FRAME_PANEL
+    mainMenu.addItem(MenuStrings::kMainMenuToggleFlatFrame, nullptr, toggleFlatFrameAction);
+  #endif
+  #if HAS_SHUTTER
+    mainMenu.addItem(MenuStrings::kMainMenuToggleShutter, nullptr, toggleShutterAction);
+  #endif
 
   DebugSerial::printFramed("initMenu: style");
   menu.setMenuStyle(1);

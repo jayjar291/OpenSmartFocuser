@@ -52,6 +52,8 @@ extern char kSettingBrightness[];
 extern char kSettingTmcDriver[];
 extern char kSettingMicrosteps[];
 extern char kSettingSpreadCycle[];
+extern char kMainMenuToggleFlatFrame[];
+extern char kMainMenuToggleShutter[];
 
 extern const char* speeds[];
 
