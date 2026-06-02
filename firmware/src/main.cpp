@@ -67,29 +67,26 @@ void setup() {
 
   DebugSerial::printFramed("Setup: begin");
   DebugSerial::printFramedValue("Free heap at startup (bytes) ", ESP.getFreeHeap(), " ");
-
   
   initMenu();
+
+  ledcSetup(7, 5000, 8); // Set up PWM on channel 7 with 5 kHz frequency and 8-bit resolution for LCD backlight control
+  ledcAttachPin(PIN_LCD_BL, 7); // Attach the LCD backlight pin to PWM channel 7
   
+  DebugSerial::printFramed("Setup: initialize addons");
   Addons::begin();
   DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
   if (Addons::isEnabled()) {
-    DebugSerial::printFramed("Setup: initialize addons");
     Addons::initializeAddons();
   }
-
 
   DebugSerial::printFramed("Setup: initializeDriver");
   Movement::initializeDriver();
   DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
-
   
   DebugSerial::printFramed("Setup: preset begin");
   preset::begin();
   DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
-
-  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
-
 
   // Core 0 handles motor/homing/endstop tasks. loop() remains on Core 1 for UI/menu.
   DebugSerial::printFramed("Setup: create motor task");
@@ -121,6 +118,7 @@ void loop() {
   menu.loop();
   SerialCommandHandler::poll();
   Movement::setSpeedSetting(getFocusSpeedSetting());
-  analogWrite(PIN_LCD_BL, getBrightnessSetting() * 255 / 100);
+  //analogWrite(PIN_LCD_BL, getBrightnessSetting() * 255 / 100);
+  ledcWrite(7, getBrightnessSetting() * 255 / 100); // Apply brightness setting to LCD backlight PWM channel
   Addons::detachServos(); // Detach servos if they have been idle for a while to reduce power consumption and prevent jitter
 }
