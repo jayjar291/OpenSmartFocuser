@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cctype>
+#include <climits>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -20,11 +21,10 @@ namespace
 
 // UI tab names and protocol/runtime constants used across the driver.
 constexpr const char *CUSTOM_TAB = "Custom";
-constexpr const char *MONITOR_TAB = "Serial Monitor";
 constexpr int SERIAL_BAUD = B115200;
 constexpr int SERIAL_TIMEOUT_MS = 1500;
 constexpr uint32_t MAX_SPEED_INDEX = 4;
-constexpr size_t SERIAL_MONITOR_MAX_LINES = 80;
+constexpr int32_t INDI_CLIENT_SAFE_MAX_STEPS = INT32_MAX;
 
 // Parse a full unsigned integer payload and reject partial/invalid conversions.
 bool parsePositiveInteger(const std::string &text, uint32_t &value)
@@ -39,6 +39,23 @@ bool parsePositiveInteger(const std::string &text, uint32_t &value)
         return false;
 
     value = static_cast<uint32_t>(converted);
+    return true;
+}
+
+bool parseSignedInteger32(const std::string &text, int32_t &value)
+{
+    if (text.empty())
+        return false;
+
+    char *endptr = nullptr;
+    errno = 0;
+    const long converted = std::strtol(text.c_str(), &endptr, 10);
+    if (errno != 0 || endptr == text.c_str() || *endptr != '\0')
+        return false;
+    if (converted < static_cast<long>(INT32_MIN) || converted > static_cast<long>(INT32_MAX))
+        return false;
+
+    value = static_cast<int32_t>(converted);
     return true;
 }
 
@@ -91,6 +108,7 @@ const char *OpenSmartFocuser::getDefaultName()
 bool OpenSmartFocuser::initProperties()
 {
     INDI::Focuser::initProperties();
+
     initCustomProperties();
     defineProperty(UsbPortTP);
 
@@ -126,8 +144,6 @@ bool OpenSmartFocuser::Connect()
     if (!openSerialPort())
         return false;
 
-    clearSerialMonitor();
-
     std::string response;
     if (!sendCommand(":PP", "", response) || response != ":PP#")
     {
@@ -137,6 +153,17 @@ bool OpenSmartFocuser::Connect()
     }
 
     publishRawOutput(response);
+
+    int32_t minSteps = 0;
+    int32_t maxSteps = 0;
+    if (queryLimits(minSteps, maxSteps))
+    {
+        applyLimits(minSteps, maxSteps);
+    }
+    else
+    {
+        LOG_WARN("Could not query limits via :GL# during connect. Keeping current INDI limits.");
+    }
 
     uint32_t speedIndex = 0;
     if (querySpeedIndex(speedIndex))
@@ -285,20 +312,6 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
         return true;
     }
 
-    if (SerialMonitorClearSP.isNameMatch(name))
-    {
-        // Clear rolling serial monitor transcript from UI and internal buffer.
-        SerialMonitorClearSP.update(states, names, n);
-        const bool clearRequested = SerialMonitorClearSP[0].getState() == ISS_ON;
-        if (clearRequested)
-            clearSerialMonitor();
-
-        SerialMonitorClearSP.reset();
-        SerialMonitorClearSP.setState(clearRequested ? IPS_OK : IPS_IDLE);
-        SerialMonitorClearSP.apply();
-        return true;
-    }
-
     return INDI::Focuser::ISNewSwitch(dev, name, states, names, n);
 }
 
@@ -359,11 +372,6 @@ void OpenSmartFocuser::initCustomProperties()
     RawOutputTP[0].fill("OUTPUT", "Raw Output", "");
     RawOutputTP.fill(getDeviceName(), "RAW_OUTPUT", "Raw Output", CUSTOM_TAB, IP_RO, 60, IPS_IDLE);
 
-    SerialMonitorTP[0].fill("MONITOR", "Monitor", "");
-    SerialMonitorTP.fill(getDeviceName(), "SERIAL_MONITOR", "Serial Monitor", MONITOR_TAB, IP_RO, 60, IPS_IDLE);
-
-    SerialMonitorClearSP[0].fill("CLEAR", "Clear", ISS_OFF);
-    SerialMonitorClearSP.fill(getDeviceName(), "SERIAL_MONITOR_CLEAR", "Serial Monitor", MONITOR_TAB, IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
 }
 
 // Define custom properties only while connected, except USB port which stays visible.
@@ -379,8 +387,6 @@ void OpenSmartFocuser::updateCustomPropertyVisibility()
         defineProperty(RawCommandTP);
         defineProperty(RawSendSP);
         defineProperty(RawOutputTP);
-        defineProperty(SerialMonitorTP);
-        defineProperty(SerialMonitorClearSP);
         return;
     }
 
@@ -391,8 +397,6 @@ void OpenSmartFocuser::updateCustomPropertyVisibility()
     deleteProperty(RawCommandTP.getName());
     deleteProperty(RawSendSP.getName());
     deleteProperty(RawOutputTP.getName());
-    deleteProperty(SerialMonitorTP.getName());
-    deleteProperty(SerialMonitorClearSP.getName());
     defineProperty(UsbPortTP);
 }
 
@@ -582,8 +586,28 @@ bool OpenSmartFocuser::sendCommand(const std::string &token, const std::string &
     if (!sendFrame(frame))
         return false;
 
-    if (!readFrame(response, SERIAL_TIMEOUT_MS))
-        return false;
+    do
+    {
+        if (!readFrame(response, SERIAL_TIMEOUT_MS))
+            return false;
+
+        if (response == ":HD#")
+        {
+            int32_t minSteps = 0;
+            int32_t maxSteps = 0;
+            if (queryLimits(minSteps, maxSteps))
+            {
+                applyLimits(minSteps, maxSteps);
+            }
+            else
+            {
+                LOG_WARN("Received :HD# but failed to refresh limits via :GL#.");
+            }
+
+            publishRawOutput(response);
+        }
+    }
+    while (response == ":HD#");
 
     publishRawOutput(response);
     return true;
@@ -637,6 +661,90 @@ bool OpenSmartFocuser::querySpeedIndex(uint32_t &speedIndex)
     return true;
 }
 
+// Query soft limits via :GL# and parse :GL<min>,<max>#.
+bool OpenSmartFocuser::queryLimits(int32_t &minSteps, int32_t &maxSteps)
+{
+    std::string response;
+    if (!sendFrame(":GL#"))
+        return false;
+
+    do
+    {
+        if (!readFrame(response, SERIAL_TIMEOUT_MS))
+            return false;
+    }
+    while (response == ":HD#");
+
+    publishRawOutput(response);
+
+    if (response == ":ER03#")
+        return false;
+
+    if (!startsWith(response, ":GL") || response.size() < 7 || response.back() != '#')
+        return false;
+
+    const std::string payload = response.substr(3, response.size() - 4);
+    const size_t comma = payload.find(',');
+    if (comma == std::string::npos)
+        return false;
+
+    const std::string minText = payload.substr(0, comma);
+    const std::string maxText = payload.substr(comma + 1);
+
+    int32_t parsedMin = 0;
+    int32_t parsedMax = 0;
+    if (!parseSignedInteger32(minText, parsedMin) || !parseSignedInteger32(maxText, parsedMax))
+        return false;
+    if (parsedMin > parsedMax)
+        return false;
+
+    minSteps = parsedMin;
+    maxSteps = parsedMax;
+    return true;
+}
+
+void OpenSmartFocuser::applyLimits(int32_t minSteps, int32_t maxSteps)
+{
+    const int32_t clampedMax = std::min(maxSteps, INDI_CLIENT_SAFE_MAX_STEPS);
+    const int32_t clampedMin = std::min(minSteps, clampedMax);
+
+    cachedMinSteps = clampedMin;
+    cachedMaxSteps = clampedMax;
+
+    FocusAbsPosNP[0].setMin(static_cast<double>(cachedMinSteps));
+    FocusAbsPosNP[0].setMax(static_cast<double>(cachedMaxSteps));
+    FocusAbsPosNP[0].setStep(1.0);
+    FocusAbsPosNP.updateMinMax();
+
+    FocusMaxPosNP[0].setMin(static_cast<double>(cachedMinSteps));
+    FocusMaxPosNP[0].setMax(static_cast<double>(cachedMaxSteps));
+    FocusMaxPosNP[0].setStep(1.0);
+    FocusMaxPosNP[0].setValue(static_cast<double>(cachedMaxSteps));
+    FocusMaxPosNP.updateMinMax();
+
+    FocusRelPosNP[0].setMin(0.0);
+    FocusRelPosNP[0].setMax(static_cast<double>(cachedMaxSteps - cachedMinSteps));
+    FocusRelPosNP[0].setStep(1.0);
+    FocusRelPosNP[0].setValue(100.0);
+    FocusRelPosNP.updateMinMax();
+
+    const uint32_t clampedPosition = static_cast<uint32_t>(std::clamp<int64_t>(
+        static_cast<int64_t>(cachedPosition),
+        static_cast<int64_t>(cachedMinSteps),
+        static_cast<int64_t>(cachedMaxSteps)));
+    cachedPosition = clampedPosition;
+    FocusAbsPosNP[0].setValue(static_cast<double>(cachedPosition));
+    FocusAbsPosNP.setState(IPS_OK);
+    FocusAbsPosNP.apply();
+
+    FocusMaxPosNP.setState(IPS_OK);
+    FocusMaxPosNP.apply();
+    FocusRelPosNP.setState(IPS_OK);
+    FocusRelPosNP.apply();
+
+    LOGF_INFO("Applied firmware limits: min=%d max=%d", cachedMinSteps, cachedMaxSteps);
+}
+
 // Update speed selector radio switch to match current firmware speed index.
 void OpenSmartFocuser::updateSpeedSelection(uint32_t speedIndex)
 {
@@ -649,35 +757,11 @@ void OpenSmartFocuser::updateSpeedSelection(uint32_t speedIndex)
     SpeedPresetSP.apply();
 }
 
-// Append one line to the rolling serial monitor and mirror it to INDI log output.
+// Mirror one line to INDI log output.
 void OpenSmartFocuser::appendSerialMonitorLine(const std::string &prefix, const std::string &payload)
 {
     const std::string line = prefix + " len=" + std::to_string(payload.size()) + " data=" + payload;
     LOGF_INFO("%s", line.c_str());
-
-    serialMonitorLines.push_back(line);
-    while (serialMonitorLines.size() > SERIAL_MONITOR_MAX_LINES)
-        serialMonitorLines.pop_front();
-
-    std::string joined;
-    for (const auto &entry : serialMonitorLines)
-    {
-        joined += entry;
-        joined += '\n';
-    }
-
-    SerialMonitorTP[0].setText(joined.c_str());
-    SerialMonitorTP.setState(IPS_OK);
-    SerialMonitorTP.apply();
-}
-
-// Clear serial monitor buffer and UI text property.
-void OpenSmartFocuser::clearSerialMonitor()
-{
-    serialMonitorLines.clear();
-    SerialMonitorTP[0].setText("");
-    SerialMonitorTP.setState(IPS_OK);
-    SerialMonitorTP.apply();
 }
 
 // Publish single latest raw output line for quick diagnostics in Custom tab.

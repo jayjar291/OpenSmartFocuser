@@ -6,7 +6,6 @@
 #include "indipropertytext.h"
 
 #include <cstdint>
-#include <deque>
 #include <string>
 
 // INDI driver for OpenSmartFocuser.
@@ -58,41 +57,39 @@ class OpenSmartFocuser : public INDI::Focuser
 		bool commandAck(const std::string &token, const std::string &payload);
 		bool queryPosition(uint32_t &position);
 		bool querySpeedIndex(uint32_t &speedIndex);
+		bool queryLimits(int32_t &minSteps, int32_t &maxSteps);
+		void applyLimits(int32_t minSteps, int32_t maxSteps);
 
-		// UI/state helpers for speed controls and serial monitor buffer management.
+		// UI/state helpers.
 		void updateSpeedSelection(uint32_t speedIndex);
 		void appendSerialMonitorLine(const std::string &prefix, const std::string &payload);
-		void clearSerialMonitor();
 		// Publish latest raw response/debug line in the simple Raw Output field.
 		void publishRawOutput(const std::string &output);
 
 		// Text properties.
 		// UsbPortTP: user-selected serial device path.
 		// RawCommandTP/RawOutputTP: manual command testing and last output display.
-		// SerialMonitorTP: rolling monitor transcript (TX/RX/DBG).
 		INDI::PropertyText UsbPortTP {1};
 		INDI::PropertyText RawCommandTP {1};
 		INDI::PropertyText RawOutputTP {1};
-		INDI::PropertyText SerialMonitorTP {1};
 
 		// Switch properties.
 		// MotorControlSP: enable/disable motor driver.
 		// SpeedPresetSP: 5 speed presets mapped to firmware :MS0..:MS4.
 		// HomeSP/RebootSP: trigger one-shot system actions.
 		// RawSendSP: send manual frame from RawCommandTP.
-		// SerialMonitorClearSP: clear rolling monitor transcript.
 		INDI::PropertySwitch MotorControlSP {2};
 		INDI::PropertySwitch SpeedPresetSP {5};
 		INDI::PropertySwitch HomeSP {1};
 		INDI::PropertySwitch RebootSP {1};
 		INDI::PropertySwitch RawSendSP {1};
-		INDI::PropertySwitch SerialMonitorClearSP {1};
 
 		// Runtime device state.
 		// serialFD: active POSIX serial descriptor or -1 when disconnected.
 		// cachedPosition: last known absolute position in ticks.
-		// serialMonitorLines: bounded transcript used by SerialMonitorTP.
+		// cachedMinSteps/cachedMaxSteps: last known firmware-reported limits.
 		int serialFD { -1 };
 		uint32_t cachedPosition { 0 };
-		std::deque<std::string> serialMonitorLines;
+		int32_t cachedMinSteps { 0 };
+		int32_t cachedMaxSteps { 200000 };
 };
