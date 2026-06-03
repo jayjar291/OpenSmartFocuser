@@ -45,6 +45,4 @@
 /*
 * Flat frame panel control pin.
 */
-#define PIN_FLAT_FRAME_PANEL        46
-#define Flat_Frame_Neopixel_Count 33
-#define Flat_Frame_Neopixel true
+#define PIN_FLAT_FRAME_PANEL        13

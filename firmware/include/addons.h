@@ -12,7 +12,6 @@ enum class AddonType : uint8_t {
     OTASensors,
 };
 
-void begin();
 bool isEnabled();
 bool isInitialized();
 bool hasAddon(AddonType type);

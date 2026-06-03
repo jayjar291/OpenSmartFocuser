@@ -5,12 +5,7 @@
 #if HAS_SHUTTER
 #include <ESP32Servo.h>
 #endif
-#if Flat_Frame_Neopixel
-#define NEO_RMT_CHANNEL 1
-#define FASTLED_RMT_BUILTIN_DRIVER 0
-#include <FastLED.h>
 
-#endif
 #include "config.h"
 
 namespace Addons {
@@ -21,26 +16,17 @@ constexpr uint16_t kShutterPulseClosedUs = 500;
 constexpr uint16_t kShutterPulseOpenUs = 2500;
 long lastmoveMills = 0;
 
-bool gApiInitialized = false;
 bool gAddonsInitialized = false;
 Servo gShutterServo;
 
-CRGB leds[Flat_Frame_Neopixel_Count];
-//Adafruit_NeoPixel gFlatPanelPixels(Flat_Frame_Neopixel_Count, PIN_FLAT_FRAME_PANEL, NEO_GRB + NEO_KHZ800);
 
 void applyFlatPanelBrightness(uint8_t brightness) {
-  if (Flat_Frame_Neopixel) {
-    fill_solid(leds, Flat_Frame_Neopixel_Count, CRGB(brightness, brightness, brightness));
-    FastLED.show();
-    return;
-  }
+  ledcWrite(6, brightness); // Write the brightness value to PWM channel 6 for flat panel control
+  DebugSerial::printFramedValue("applyFlatPanelBrightness: brightness ", brightness, "");
 }
 
 } // namespace
 
-void begin() {
-  gApiInitialized = true;
-}
 
 bool isEnabled() {
   return HAS_SHUTTER || HAS_FLAT_FRAME_PANEL;
@@ -62,7 +48,7 @@ bool hasAddon(AddonType type) {
 }
 
 void initializeAddons() {
-  if (!gApiInitialized || gAddonsInitialized) {
+  if ( gAddonsInitialized) {
     return;
   }
 
@@ -75,14 +61,9 @@ void initializeAddons() {
   #endif
 
   #if HAS_FLAT_FRAME_PANEL
-    if (Flat_Frame_Neopixel) {
-      FastLED.addLeds<                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       , PIN_FLAT_FRAME_PANEL, GRB>(leds, Flat_Frame_Neopixel_Count);
-      fill_solid(leds, Flat_Frame_Neopixel_Count, CRGB::Black);
-      FastLED.show();
-    } else {
-      pinMode(PIN_FLAT_FRAME_PANEL, OUTPUT);
-    }
-    applyFlatPanelBrightness(0);
+  ledcSetup(6, 5000, 8); // Set up PWM on channel 6 with 5 kHz frequency and 8-bit resolution for flat panel brightness control
+  ledcAttachPin(PIN_FLAT_FRAME_PANEL, 6); // Attach the flat
+  applyFlatPanelBrightness(0);
   #endif
 
   gAddonsInitialized = true;
@@ -95,7 +76,6 @@ void SetFlatPanelBrightness(uint8_t brightness) {
   if (!HAS_FLAT_FRAME_PANEL || !gAddonsInitialized) {
     return;
   }
-
   applyFlatPanelBrightness(brightness);
 }
 

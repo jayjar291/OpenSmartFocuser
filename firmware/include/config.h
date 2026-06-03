@@ -117,4 +117,4 @@
 #define IDLE_COLOR_SPACER 0x7800
 
 #define HAS_SHUTTER true
-#define HAS_FLAT_FRAME_PANEL false
+#define HAS_FLAT_FRAME_PANEL true

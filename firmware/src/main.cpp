@@ -74,7 +74,6 @@ void setup() {
   ledcAttachPin(PIN_LCD_BL, 7); // Attach the LCD backlight pin to PWM channel 7
   
   DebugSerial::printFramed("Setup: initialize addons");
-  Addons::begin();
   DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
   if (Addons::isEnabled()) {
     Addons::initializeAddons();
