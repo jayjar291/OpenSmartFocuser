@@ -1,7 +1,10 @@
 #pragma once
 
+#include "indidustcapinterface.h"
 #include "indifocuser.h"
+#include "indilightboxinterface.h"
 
+#include "indipropertynumber.h"
 #include "indipropertyswitch.h"
 #include "indipropertytext.h"
 
@@ -10,7 +13,7 @@
 
 // INDI driver for OpenSmartFocuser.
 // This class owns serial transport, protocol mapping, and custom UI properties.
-class OpenSmartFocuser : public INDI::Focuser
+class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, public INDI::LightBoxInterface
 {
 	public:
 		// Construct driver instance and advertise supported focuser capabilities.
@@ -19,6 +22,7 @@ class OpenSmartFocuser : public INDI::Focuser
 
 		// INDI-visible default device label.
 		const char *getDefaultName() override;
+		void ISGetProperties(const char *dev) override;
 
 	protected:
 		// Build base focuser properties and custom OpenSmartFocuser properties.
@@ -29,6 +33,8 @@ class OpenSmartFocuser : public INDI::Focuser
 		// Open/close serial transport and perform startup handshake.
 		bool Connect() override;
 		bool Disconnect() override;
+		bool ISSnoopDevice(XMLEle *root) override;
+		bool saveConfigItems(FILE *fp) override;
 
 		// Absolute/relative/abort motion handlers invoked by INDI focuser interface.
 		IPState MoveAbsFocuser(uint32_t targetTicks) override;
@@ -36,8 +42,15 @@ class OpenSmartFocuser : public INDI::Focuser
 		bool AbortFocuser() override;
 
 		// Handle custom switch and text property updates from clients.
+		bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
 		bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n) override;
 		bool ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n) override;
+
+		IPState ParkCap() override;
+		IPState UnParkCap() override;
+		IPState AbortCap() override;
+		bool SetLightBoxBrightness(uint16_t value) override;
+		bool EnableLightBox(bool enable) override;
 
 	private:
 		// Create and define all non-standard driver properties.
@@ -58,7 +71,10 @@ class OpenSmartFocuser : public INDI::Focuser
 		bool queryPosition(uint32_t &position);
 		bool querySpeedIndex(uint32_t &speedIndex);
 		bool queryLimits(int32_t &minSteps, int32_t &maxSteps);
+		bool queryAddons(bool &hasShutter, bool &hasFlatPanel);
 		void applyLimits(int32_t minSteps, int32_t maxSteps);
+		void updateAddonInterfaces();
+		void syncAdvertisedInterfaces();
 
 		// UI/state helpers.
 		void updateSpeedSelection(uint32_t speedIndex);
@@ -73,6 +89,12 @@ class OpenSmartFocuser : public INDI::Focuser
 		INDI::PropertyText RawCommandTP {1};
 		INDI::PropertyText RawOutputTP {1};
 
+		// Number properties.
+		// ShutterPositionNP: shutter servo angle 0-180.
+		// FlatPanelBrightnessNP: flat panel PWM brightness 0-255.
+		INDI::PropertyNumber ShutterPositionNP {1};
+		INDI::PropertyNumber FlatPanelBrightnessNP {1};
+
 		// Switch properties.
 		// MotorControlSP: enable/disable motor driver.
 		// SpeedPresetSP: 5 speed presets mapped to firmware :MS0..:MS4.
@@ -80,6 +102,8 @@ class OpenSmartFocuser : public INDI::Focuser
 		// RawSendSP: send manual frame from RawCommandTP.
 		INDI::PropertySwitch MotorControlSP {2};
 		INDI::PropertySwitch SpeedPresetSP {5};
+		INDI::PropertySwitch ShutterPresetSP {2};
+		INDI::PropertySwitch FlatPanelPresetSP {2};
 		INDI::PropertySwitch HomeSP {1};
 		INDI::PropertySwitch RebootSP {1};
 		INDI::PropertySwitch RawSendSP {1};
@@ -92,4 +116,6 @@ class OpenSmartFocuser : public INDI::Focuser
 		uint32_t cachedPosition { 0 };
 		int32_t cachedMinSteps { 0 };
 		int32_t cachedMaxSteps { 200000 };
+		bool hasShutterAddon { false };
+		bool hasFlatPanelAddon { false };
 };
