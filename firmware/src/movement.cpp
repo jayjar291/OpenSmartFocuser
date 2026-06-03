@@ -99,12 +99,19 @@ void initializeDriver() {
   configureTmcDriverRegisters();
 
   stepperEngine.init();
-  focuserStepper = stepperEngine.stepperConnectToPin(PIN_TMC_STEP);
+  
+  focuserStepper = stepperEngine.stepperConnectToPin(PIN_TMC_STEP, DRIVER_RMT);
+  DebugSerial::printFramedValue("focuserStepper ptr: ", (uint32_t)focuserStepper, "");
+  if (focuserStepper == nullptr) {
+    DebugSerial::printFramed("stepperConnectToPin failed");
+    return;
+  }
   focuserStepper->setDirectionPin(PIN_TMC_DIR);
   focuserStepper->setEnablePin(PIN_TMC_ENABLE, true); // active LOW: LOW = motor enabled
   focuserStepper->setSpeedInHz(TMC_MAX_SPEED);
   focuserStepper->setAcceleration(TMC_MAX_ACCELERATION);
   setMotorEnabledState(false);
+  
   uartConnectedCached = (focuserDriver.test_connection() == 0);
   if (uartConnectedCached) {
     driverCurrentCachedMa = focuserDriver.rms_current();
@@ -114,8 +121,11 @@ void initializeDriver() {
     driverMicrostepsCached = 0;
   }
   uartConnectionLost = false;
+  
   lastUartReconnectAttemptMs = millis();
+  
   loadPersistentCurrentPosition();
+  
 }
 
 void healthCheck() {

@@ -36,5 +36,8 @@ void handleReboot(const char* parameters, size_t parametersLength);
 void handleToggleMotor(const char* parameters, size_t parametersLength);
 void handleDisableMotor(const char* parameters, size_t parametersLength);
 void handleEnableMotor(const char* parameters, size_t parametersLength);
+void handleQueryAddons(const char* parameters, size_t parametersLength);
+void handleSetFlatPanelBrightness(const char* parameters, size_t parametersLength);
+void handleSetShutterPosition(const char* parameters, size_t parametersLength);
 
 } // namespace SerialCommandHandler

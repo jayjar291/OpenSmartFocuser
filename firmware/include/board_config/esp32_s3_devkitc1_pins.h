@@ -29,7 +29,20 @@
  * Physical button inputs used by menu navigation and control.
  */
 #define PIN_BUTTON_UP               35
-#define PIN_BUTTON_DOWN             36
-#define PIN_BUTTON_SELECT           37
+#define PIN_BUTTON_DOWN             37
+#define PIN_BUTTON_SELECT           36
 #define PIN_BUTTON_ENDSTOP          38
 #define PIN_BUTTON_BOOT              0
+
+
+//addon pins definitions
+
+/*
+* Shutter servo control pin.
+*/
+#define PIN_SHUTTER_SERVO           18
+
+/*
+* Flat frame panel control pin.
+*/
+#define PIN_FLAT_FRAME_PANEL        13

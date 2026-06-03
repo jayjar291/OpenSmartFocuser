@@ -3,6 +3,7 @@
 #include <TMCStepper.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include "addons.h"
 #include "config.h"
 #include "debug_serial.h"
 #include "menu.h"
@@ -44,13 +45,13 @@ static void motorTask(void* /*param*/) {
     Movement::updateHoming();
     Movement::updatePositionPersistence();
     Movement::updateMotorIdleTimeout();
-
+    
     const uint32_t now = millis();
     if (now - lastHealthCheckMs >= kHealthCheckIntervalMs) {
       Movement::healthCheck();
       lastHealthCheckMs = now;
     }
-
+    
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
@@ -64,28 +65,46 @@ void setup() {
   delay(100);
   SerialCommandHandler::begin(Serial);
 
+  DebugSerial::printFramed("Setup: begin");
+  DebugSerial::printFramedValue("Free heap at startup (bytes) ", ESP.getFreeHeap(), " ");
+  
   initMenu();
+
+  ledcSetup(7, 5000, 8); // Set up PWM on channel 7 with 5 kHz frequency and 8-bit resolution for LCD backlight control
+  ledcAttachPin(PIN_LCD_BL, 7); // Attach the LCD backlight pin to PWM channel 7
+  
+  DebugSerial::printFramed("Setup: initialize addons");
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
+  if (Addons::isEnabled()) {
+    Addons::initializeAddons();
+  }
 
   DebugSerial::printFramed("Setup: initializeDriver");
   Movement::initializeDriver();
-
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
+  
   DebugSerial::printFramed("Setup: preset begin");
   preset::begin();
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
 
   // Core 0 handles motor/homing/endstop tasks. loop() remains on Core 1 for UI/menu.
   DebugSerial::printFramed("Setup: create motor task");
+
   BaseType_t taskCreated = xTaskCreatePinnedToCore(
-      motorTask,
-      "motorTask",
-      4096,
-      nullptr,
-      2,
-      &motorTaskHandle,
-      0);
-  if (taskCreated != pdPASS) {
-    DebugSerial::printFramed("Failed to start motor task on Core 0");
-    return;
-  }
+    motorTask,
+    "motorTask",
+    4096,
+    nullptr,
+    2,
+    &motorTaskHandle,
+    0);
+    if (taskCreated != pdPASS) {
+      DebugSerial::printFramed("Failed to start motor task on Core 0");
+      return;
+    }
+  DebugSerial::printFramedValue("Free heap (bytes) ", ESP.getFreeHeap(), " ");
+
+
 
   DebugSerial::printFramed("Setup: done");
 }
@@ -98,5 +117,7 @@ void loop() {
   menu.loop();
   SerialCommandHandler::poll();
   Movement::setSpeedSetting(getFocusSpeedSetting());
-  analogWrite(PIN_LCD_BL, getBrightnessSetting() * 255 / 100);
+  //analogWrite(PIN_LCD_BL, getBrightnessSetting() * 255 / 100);
+  ledcWrite(7, getBrightnessSetting() * 255 / 100); // Apply brightness setting to LCD backlight PWM channel
+  Addons::detachServos(); // Detach servos if they have been idle for a while to reduce power consumption and prevent jitter
 }
