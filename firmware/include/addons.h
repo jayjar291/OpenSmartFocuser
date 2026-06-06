@@ -18,8 +18,8 @@ bool hasAddon(AddonType type);
 void initializeAddons();
 void detachServos();
 
-void SetFlatPanelBrightness(uint8_t brightness);
-void SetShutterPosition(uint8_t position);
+void setFlatPanelBrightness(uint8_t brightness);
+void setShutterPosition(uint8_t position);
 
 void toggleFlatPanel();
 void toggleShutter();
