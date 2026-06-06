@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #if HAS_SHUTTER
-#include <ESP32Servo.h>
+#include <ServoEasing.hpp>
 #endif
 
 #include "config.h"
@@ -12,25 +12,116 @@ namespace Addons {
 
 namespace {
 
+// Shutter servo hardware mapping.
 constexpr uint16_t kShutterPulseClosedUs = 500;
 constexpr uint16_t kShutterPulseOpenUs = 2500;
-// PWM channel 6 is reserved for flat panel output to avoid the display backlight channel (7).
-constexpr uint8_t kFlatPanelPwmChannel = 6;
-constexpr uint16_t kFlatPanelPwmFrequencyHz = 5000;
-constexpr uint8_t kFlatPanelPwmResolutionBits = 8;
-constexpr uint8_t kShutterClosedDegrees = 0;
-constexpr uint8_t kShutterOpenDegrees = 180;
-constexpr uint32_t kShutterServoDetachDelayMs = 350;
+constexpr uint16_t kShutterMinAngle = 0;
+constexpr uint16_t kShutterMaxAngle = 270;
+
+// ServoEasing behavior configuration.
+constexpr uint16_t kShutterInitialAngle = 0;
+constexpr uint_fast8_t kShutterEasingType = EASE_CUBIC_IN_OUT;
+constexpr uint16_t kShutterCloseCruiseSpeedDegPerSec = 180;
+constexpr uint16_t kShutterCloseLandingSpeedDegPerSec = 45;
+constexpr uint16_t kShutterOpenCruiseSpeedDegPerSec = 180;
+constexpr uint16_t kShutterOpenLandingSpeedDegPerSec = 50;
+constexpr uint16_t kShutterCloseTransitionAngle = 45;
+constexpr uint16_t kShutterOpenTransitionAngle = 210;
+
+// Keep servo powered briefly after movement to prevent detach/attach chatter.
+constexpr uint32_t kShutterDetachDelayMs = 350;
 
 uint32_t gLastShutterMoveTickMs = 0;
 
 bool gAddonsInitialized = false;
-Servo gShutterServo;
+ServoEasing gShutterServo;
+bool gShutterServoAttached = false;
+uint16_t gShutterTargetPosition = 0;
+bool gShutterHasPendingStage = false;
+uint16_t gShutterPendingTargetPosition = 0;
+uint16_t gShutterPendingSpeedDegPerSec = 0;
+
+
+uint16_t clampShutterPosition(uint16_t position) {
+  return static_cast<uint16_t>(constrain(static_cast<int32_t>(position), static_cast<int32_t>(kShutterMinAngle), static_cast<int32_t>(kShutterMaxAngle)));
+}
+
+bool attachShutterServoIfNeeded(uint16_t initialAngle) {
+  if (gShutterServoAttached) {
+    return true;
+  }
+
+  const uint16_t clampedInitialAngle = clampShutterPosition(initialAngle);
+  if (gShutterServo.attach(PIN_SHUTTER_SERVO, clampedInitialAngle, kShutterPulseClosedUs, kShutterPulseOpenUs) == INVALID_SERVO) {
+    DebugSerial::printFramed("attachShutterServoIfNeeded: failed to attach shutter servo");
+    return false;
+  }
+
+  gShutterServo.setEasingType(kShutterEasingType);
+  gShutterServoAttached = true;
+  return true;
+}
+
+void startShutterStageMove(uint16_t targetPosition, uint16_t speedDegPerSec) {
+  gShutterServo.setEasingType(kShutterEasingType);
+  gShutterServo.startEaseTo(static_cast<int>(targetPosition), speedDegPerSec, START_UPDATE_BY_INTERRUPT);
+  gShutterTargetPosition = targetPosition;
+  gLastShutterMoveTickMs = millis();
+}
+
+void startShutterMove(uint16_t requestedPosition) {
+  const uint16_t targetPosition = clampShutterPosition(requestedPosition);
+  const uint32_t now = millis();
+
+  if (!attachShutterServoIfNeeded(gShutterTargetPosition)) {
+    return;
+  }
+
+  if (targetPosition == gShutterTargetPosition && !gShutterServo.isMoving()) {
+    gShutterServo.write(targetPosition);
+    gShutterTargetPosition = targetPosition;
+    gShutterHasPendingStage = false;
+    gLastShutterMoveTickMs = now;
+    return;
+  }
+
+  gShutterHasPendingStage = false;
+
+  // Two-stage close profile for full close: fast cruise then softer landing.
+  if (targetPosition == kShutterMinAngle && gShutterTargetPosition > kShutterCloseTransitionAngle) {
+    const uint16_t stage1Target = kShutterCloseTransitionAngle;
+    gShutterHasPendingStage = true;
+    gShutterPendingTargetPosition = kShutterMinAngle;
+    gShutterPendingSpeedDegPerSec = kShutterCloseLandingSpeedDegPerSec;
+    startShutterStageMove(stage1Target, kShutterCloseCruiseSpeedDegPerSec);
+    return;
+  }
+
+  // Two-stage open profile for full open: fast cruise then softer landing.
+  if (targetPosition == kShutterMaxAngle && gShutterTargetPosition < kShutterOpenTransitionAngle) {
+    const uint16_t stage1Target = kShutterOpenTransitionAngle;
+    gShutterHasPendingStage = true;
+    gShutterPendingTargetPosition = kShutterMaxAngle;
+    gShutterPendingSpeedDegPerSec = kShutterOpenLandingSpeedDegPerSec;
+    startShutterStageMove(stage1Target, kShutterOpenCruiseSpeedDegPerSec);
+    return;
+  }
+
+  const bool isClosing = targetPosition < gShutterTargetPosition;
+  uint16_t speedDegPerSec = isClosing ? kShutterCloseCruiseSpeedDegPerSec : kShutterOpenCruiseSpeedDegPerSec;
+
+  if (isClosing && targetPosition <= kShutterCloseTransitionAngle) {
+    speedDegPerSec = kShutterCloseLandingSpeedDegPerSec;
+  } else if (!isClosing && targetPosition >= kShutterOpenTransitionAngle) {
+    speedDegPerSec = kShutterOpenLandingSpeedDegPerSec;
+  }
+
+  startShutterStageMove(targetPosition, speedDegPerSec);
+}
 
 
 void applyFlatPanelBrightness(uint8_t brightness) {
-  // Write the requested flat panel brightness to the shared PWM channel.
-  ledcWrite(kFlatPanelPwmChannel, brightness);
+  ledcWrite(6, brightness); // Write the brightness value to PWM channel 6 for flat panel control
   DebugSerial::printFramedValue("applyFlatPanelBrightness: brightness ", brightness, "");
 }
 
@@ -46,7 +137,6 @@ bool isInitialized() {
 }
 
 bool hasAddon(AddonType type) {
-  // Resolve addon availability from compile-time feature flags.
   switch (type) {
     case AddonType::Shutter:
       return HAS_SHUTTER;
@@ -58,67 +148,72 @@ bool hasAddon(AddonType type) {
 }
 
 void initializeAddons() {
-  // Guard initialization so hardware resources are configured once.
   if (gAddonsInitialized) {
     return;
   }
 
   #if HAS_SHUTTER
-  // Configure the shutter servo PWM timers and drive it to the closed position.
   ESP32PWM::allocateTimer(0); // Allocate PWM timer 0 for shutter servo
   ESP32PWM::allocateTimer(1); // Allocate PWM timer 1 for shutter servo
-  gShutterServo.setPeriodHertz(50);
-  gShutterServo.attach(PIN_SHUTTER_SERVO, kShutterPulseClosedUs, kShutterPulseOpenUs);
-  gShutterServo.write(kShutterClosedDegrees);
+  gShutterTargetPosition = kShutterInitialAngle;
+  if (attachShutterServoIfNeeded(gShutterTargetPosition)) {
+    gShutterServo.write(gShutterTargetPosition);
+  }
   #endif
 
   #if HAS_FLAT_FRAME_PANEL
-  // Configure the flat panel PWM output and start with the panel off.
-  ledcSetup(kFlatPanelPwmChannel, kFlatPanelPwmFrequencyHz, kFlatPanelPwmResolutionBits);
-  ledcAttachPin(PIN_FLAT_FRAME_PANEL, kFlatPanelPwmChannel);
+  ledcSetup(6, 5000, 8); // Set up PWM on channel 6 with 5 kHz frequency and 8-bit resolution for flat panel brightness control
+  ledcAttachPin(PIN_FLAT_FRAME_PANEL, 6); // Attach the flat
   applyFlatPanelBrightness(0);
   #endif
 
   gAddonsInitialized = true;
   #if HAS_SHUTTER
-  // Release the servo after startup so it is only powered while moving.
-  gShutterServo.detach(); // Ensure servo is not powered until explicitly commanded
+  if (gShutterServoAttached) {
+    gShutterServo.detach(); // Ensure servo is not powered until explicitly commanded
+    gShutterServoAttached = false;
+  }
   #endif
 }
 
 void setFlatPanelBrightness(uint8_t brightness) {
-  // Ignore unsupported or uninitialized flat panel requests.
   if (!HAS_FLAT_FRAME_PANEL || !gAddonsInitialized) {
     return;
   }
   applyFlatPanelBrightness(brightness);
 }
 
-void setShutterPosition(uint8_t position) {
-  // Ignore unsupported or uninitialized shutter requests.
+void setShutterPosition(uint16_t position) {
   if (!HAS_SHUTTER || !gAddonsInitialized) {
     return;
   }
-  // Reattach before movement so the servo receives a fresh position command.
-  gLastShutterMoveTickMs = millis();
-  gShutterServo.attach(PIN_SHUTTER_SERVO, kShutterPulseClosedUs, kShutterPulseOpenUs);
-  gShutterServo.write(position);
-  DebugSerial::printFramedValue("setShutterPosition: position ", position, "");
+
+  startShutterMove(position);
+  DebugSerial::printFramedValue("setShutterPosition: target ", clampShutterPosition(position), "");
 }
 
 void detachServos() {
-  // Drop servo holding torque after a short idle delay to reduce jitter and power draw.
-  if (HAS_SHUTTER && gAddonsInitialized && gShutterServo.attached()) {
-    const uint32_t elapsedSinceMoveMs = millis() - gLastShutterMoveTickMs;
-    if (elapsedSinceMoveMs >= kShutterServoDetachDelayMs) {
+  if (HAS_SHUTTER && gAddonsInitialized && gShutterServoAttached) {
+    if (gShutterServo.isMoving()) {
+      gLastShutterMoveTickMs = millis();
+      return;
+    }
+
+    if (gShutterHasPendingStage) {
+      gShutterHasPendingStage = false;
+      startShutterStageMove(gShutterPendingTargetPosition, gShutterPendingSpeedDegPerSec);
+      return;
+    }
+
+    if ((millis() - gLastShutterMoveTickMs) >= kShutterDetachDelayMs) { // Only detach if it's been a while since the last move command, to avoid unnecessary detach/attach cycles
       gShutterServo.detach();
+      gShutterServoAttached = false;
       DebugSerial::printFramed("detachServos: shutter servo detached to reduce power and prevent jitter");
     }
   }
 }
 
 void toggleFlatPanel() {
-  // Toggle the flat panel between off and fully-on brightness levels.
   if (!HAS_FLAT_FRAME_PANEL || !gAddonsInitialized) {
     return;
   }
@@ -129,13 +224,12 @@ void toggleFlatPanel() {
 }
 
 void toggleShutter() {
-  // Toggle the shutter between fully open and fully closed positions.
   if (!HAS_SHUTTER || !gAddonsInitialized) {
     return;
   }
   static bool isOpen = false;
   isOpen = !isOpen;
-  setShutterPosition(isOpen ? kShutterOpenDegrees : kShutterClosedDegrees);
+  setShutterPosition(static_cast<uint16_t>(isOpen ? 270 : 0));
 }
 
 } // namespace Addons
