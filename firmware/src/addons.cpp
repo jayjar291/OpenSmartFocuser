@@ -14,6 +14,7 @@ namespace {
 
 constexpr uint16_t kShutterPulseClosedUs = 500;
 constexpr uint16_t kShutterPulseOpenUs = 2500;
+// PWM channel 6 is reserved for flat panel output to avoid the display backlight channel (7).
 constexpr uint8_t kFlatPanelPwmChannel = 6;
 constexpr uint16_t kFlatPanelPwmFrequencyHz = 5000;
 constexpr uint8_t kFlatPanelPwmResolutionBits = 8;
@@ -21,7 +22,7 @@ constexpr uint8_t kShutterClosedDegrees = 0;
 constexpr uint8_t kShutterOpenDegrees = 180;
 constexpr uint32_t kShutterServoDetachDelayMs = 350;
 
-uint32_t lastShutterMoveMillis = 0;
+uint32_t gLastShutterMoveTickMs = 0;
 
 bool gAddonsInitialized = false;
 Servo gShutterServo;
@@ -99,7 +100,7 @@ void setShutterPosition(uint8_t position) {
     return;
   }
   // Reattach before movement so the servo receives a fresh position command.
-  lastShutterMoveMillis = millis();
+  gLastShutterMoveTickMs = millis();
   gShutterServo.attach(PIN_SHUTTER_SERVO, kShutterPulseClosedUs, kShutterPulseOpenUs);
   gShutterServo.write(position);
   DebugSerial::printFramedValue("setShutterPosition: position ", position, "");
@@ -108,7 +109,8 @@ void setShutterPosition(uint8_t position) {
 void detachServos() {
   // Drop servo holding torque after a short idle delay to reduce jitter and power draw.
   if (HAS_SHUTTER && gAddonsInitialized && gShutterServo.attached()) {
-    if (millis() - lastShutterMoveMillis >= kShutterServoDetachDelayMs) {
+    const uint32_t elapsedSinceMoveMs = millis() - gLastShutterMoveTickMs;
+    if (elapsedSinceMoveMs >= kShutterServoDetachDelayMs) {
       gShutterServo.detach();
       DebugSerial::printFramed("detachServos: shutter servo detached to reduce power and prevent jitter");
     }
