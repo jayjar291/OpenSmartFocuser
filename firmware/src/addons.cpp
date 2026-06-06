@@ -17,6 +17,9 @@ constexpr uint16_t kShutterPulseClosedUs = 500;
 constexpr uint16_t kShutterPulseOpenUs = 2500;
 constexpr uint16_t kShutterMinAngle = 0;
 constexpr uint16_t kShutterMaxAngle = 270;
+constexpr uint8_t kFlatPanelPwmChannel = 6;
+constexpr uint16_t kFlatPanelPwmFrequencyHz = 5000;
+constexpr uint8_t kFlatPanelPwmResolutionBits = 8;
 
 // ServoEasing behavior configuration.
 constexpr uint16_t kShutterInitialAngle = 0;
@@ -64,6 +67,7 @@ bool attachShutterServoIfNeeded(uint16_t initialAngle) {
 
 void startShutterStageMove(uint16_t targetPosition, uint16_t speedDegPerSec) {
   gShutterServo.setEasingType(kShutterEasingType);
+  // Use interrupt-driven updates so servo easing continues while the main loop handles UI/serial tasks.
   gShutterServo.startEaseTo(static_cast<int>(targetPosition), speedDegPerSec, START_UPDATE_BY_INTERRUPT);
   gShutterTargetPosition = targetPosition;
   gLastShutterMoveTickMs = millis();
@@ -121,7 +125,7 @@ void startShutterMove(uint16_t requestedPosition) {
 
 
 void applyFlatPanelBrightness(uint8_t brightness) {
-  ledcWrite(6, brightness); // Write the brightness value to PWM channel 6 for flat panel control
+  ledcWrite(kFlatPanelPwmChannel, brightness);
   DebugSerial::printFramedValue("applyFlatPanelBrightness: brightness ", brightness, "");
 }
 
@@ -162,8 +166,8 @@ void initializeAddons() {
   #endif
 
   #if HAS_FLAT_FRAME_PANEL
-  ledcSetup(6, 5000, 8); // Set up PWM on channel 6 with 5 kHz frequency and 8-bit resolution for flat panel brightness control
-  ledcAttachPin(PIN_FLAT_FRAME_PANEL, 6); // Attach the flat
+  ledcSetup(kFlatPanelPwmChannel, kFlatPanelPwmFrequencyHz, kFlatPanelPwmResolutionBits);
+  ledcAttachPin(PIN_FLAT_FRAME_PANEL, kFlatPanelPwmChannel);
   applyFlatPanelBrightness(0);
   #endif
 
@@ -205,7 +209,7 @@ void detachServos() {
       return;
     }
 
-    if ((millis() - gLastShutterMoveTickMs) >= kShutterDetachDelayMs) { // Only detach if it's been a while since the last move command, to avoid unnecessary detach/attach cycles
+    if ((millis() - gLastShutterMoveTickMs) >= kShutterDetachDelayMs) {
       gShutterServo.detach();
       gShutterServoAttached = false;
       DebugSerial::printFramed("detachServos: shutter servo detached to reduce power and prevent jitter");
@@ -229,7 +233,7 @@ void toggleShutter() {
   }
   static bool isOpen = false;
   isOpen = !isOpen;
-  setShutterPosition(static_cast<uint16_t>(isOpen ? 270 : 0));
+  setShutterPosition(static_cast<uint16_t>(isOpen ? kShutterMaxAngle : kShutterMinAngle));
 }
 
 } // namespace Addons
