@@ -632,7 +632,7 @@ void handleSetShutterPosition(const char* parameters, size_t parametersLength) {
     return;
   }
 
-  if (position < 0 || position > 180) {
+  if (position < 0 || position > 270) {
     gSerial->println(kResponseInvalidArgs);
     return;
   }
@@ -642,7 +642,7 @@ void handleSetShutterPosition(const char* parameters, size_t parametersLength) {
     return;
   }
 
-  Addons::SetShutterPosition(static_cast<uint8_t>(position));
+  Addons::SetShutterPosition(static_cast<uint16_t>(position));
   gSerial->println(kResponseAck);
 }
 
