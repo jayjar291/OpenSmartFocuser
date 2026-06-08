@@ -5,13 +5,19 @@ OpenSmartFocuser is an open-source telescope focuser project with:
 - an INDI driver scaffold for host-side integration
 - hardware design files for PCB and related fabrication assets
 
+## Build Targets
+
+- `firmware/` contains the PlatformIO project for the device firmware.
+- `drivers/indi/` contains the CMake-based INDI focuser driver.
+
 ## Folder Structure
 
 ```text
 OpenSmartFocuser/
 ├── .github/
 │   ├── ISSUE_TEMPLATE/        # GitHub issue templates
-│   └── workflows/             # CI workflows (firmware build)
+│   └── workflows/             # CI workflows (firmware and INDI driver builds)
+├── docs/                      # Project documentation and operating notes
 ├── drivers/
 │   └── indi/                  # INDI driver scaffold and CMake config
 ├── firmware/
@@ -20,6 +26,34 @@ OpenSmartFocuser/
 │   ├── platformio.ini         # PlatformIO project config
 │   └── backup/                # Local backup files
 └── hardware/
+    ├── README.md              # Hardware folder overview
     ├── cad/                   # Mechanical CAD-related files
+    │   └── README.md          # CAD file overview
     └── pcb/                   # KiCad project and fabrication outputs
+        ├── README.md          # PCB project overview
+        └── fabrication/       # Fabrication export guidance and outputs
 ```
+
+## Continuous Integration
+
+- `firmware-build.yml` builds the firmware project on Ubuntu with PlatformIO.
+- `indi-driver-build.yml` configures and builds the INDI driver on Ubuntu with system INDI, Nova, GSL, and ZLIB development packages.
+
+## Local Builds
+
+Firmware:
+
+```bash
+cd firmware
+pio run
+```
+
+INDI driver:
+
+```bash
+cd drivers/indi
+cmake -S . -B build
+cmake --build build --parallel
+```
+
+The INDI driver build expects CMake, a C++ compiler, and the development packages for INDI, Nova, GSL, and ZLIB.

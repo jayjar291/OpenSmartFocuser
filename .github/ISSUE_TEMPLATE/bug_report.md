@@ -8,7 +8,7 @@ labels: bug
 
 **Environment**
 - OS:
-- Driver: [INDI / ASCOM / N/A]
+- Component: [Firmware / INDI / ASCOM / Hardware / N/A]
 - Firmware version:
 - Client software:
 

@@ -1,0 +1,43 @@
+name: INDI Driver Build
+
+on:
+  push:
+    paths:
+      - 'drivers/indi/**'
+      - '.github/workflows/indi-driver-build.yml'
+  pull_request:
+    paths:
+      - 'drivers/indi/**'
+      - '.github/workflows/indi-driver-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: drivers/indi
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libindi-dev libnova-dev libgsl-dev zlib1g-dev
+
+      - name: Fetch INDI CMake modules
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/indilib/indi.git /tmp/indi-upstream
+          cd /tmp/indi-upstream
+          git sparse-checkout set cmake_modules
+          cp cmake_modules/CMakeCommon.cmake "$GITHUB_WORKSPACE/drivers/indi/cmake_modules/"
+          cp cmake_modules/FindINDI.cmake "$GITHUB_WORKSPACE/drivers/indi/cmake_modules/"
+          cp cmake_modules/FindNova.cmake "$GITHUB_WORKSPACE/drivers/indi/cmake_modules/"
+          cp cmake_modules/UnityBuild.cmake "$GITHUB_WORKSPACE/drivers/indi/cmake_modules/"
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
