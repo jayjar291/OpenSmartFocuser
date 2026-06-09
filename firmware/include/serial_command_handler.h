@@ -6,7 +6,7 @@ namespace SerialCommandHandler {
 
 using CommandCallback = void (*)(const char* parameters, size_t parametersLength);
 
-void begin(HardwareSerial& serial = Serial);
+void begin(Stream& serial = Serial);
 void poll();
 
 void handleGetPosition(const char* parameters, size_t parametersLength);
