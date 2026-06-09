@@ -24,7 +24,7 @@ constexpr const char* kResponseAddonUnavalable = ":ER05#";
 constexpr const char* kResponsePositionExceedLimit  = ":ER06#";
 constexpr const char* kResponseError = ":ERR#";
 
-HardwareSerial* gSerial = nullptr;
+Stream* gSerial = nullptr;
 char gCommandBuffer[kMaxCommandLength + 1] = {0};
 size_t gCommandLength = 0;
 bool gCapturing = false;
@@ -64,7 +64,7 @@ bool readNonEmptyStringArg(const ParsedArgs& args, uint8_t index, const char*& o
 
 } // namespace
 //
-void begin(HardwareSerial& serial) {
+void begin(Stream& serial) {
   gSerial = &serial;
   gCommandLength = 0;
   gCapturing = false;
