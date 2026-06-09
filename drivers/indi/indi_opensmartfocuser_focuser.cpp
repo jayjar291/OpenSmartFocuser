@@ -26,11 +26,11 @@ constexpr int SERIAL_TIMEOUT_MS = 1500;
 constexpr uint32_t MAX_SPEED_INDEX = 4;
 constexpr int32_t INDI_CLIENT_SAFE_MAX_STEPS = INT32_MAX;
 constexpr double SHUTTER_MIN = 0.0;
-constexpr double SHUTTER_MAX = 180.0;
+constexpr double SHUTTER_MAX = 270.0;
 constexpr double FLAT_PANEL_MIN = 0.0;
 constexpr double FLAT_PANEL_MAX = 255.0;
 constexpr uint32_t SHUTTER_OFF = 0;
-constexpr uint32_t SHUTTER_ON = 180;
+constexpr uint32_t SHUTTER_ON = 270;
 constexpr uint32_t FLAT_PANEL_OFF = 0;
 constexpr uint32_t FLAT_PANEL_ON = 255;
 
@@ -548,7 +548,7 @@ bool OpenSmartFocuser::ISNewText(const char *dev, const char *name, char *texts[
 // Declare all custom properties and their tabs/options.
 void OpenSmartFocuser::initCustomProperties()
 {
-    UsbPortTP[0].fill("PORT", "USB Port", "/dev/ttyACM0");
+    UsbPortTP[0].fill("PORT", "USB Port", "/dev/OSF");
     UsbPortTP.fill(getDeviceName(), "USB_SERIAL_PORT", "USB Serial", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
 
     ShutterPositionNP[0].fill("SHUTTER_POSITION", "Shutter", "%3.0f", SHUTTER_MIN, SHUTTER_MAX, 1, SHUTTER_OFF);

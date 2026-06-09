@@ -8,3 +8,5 @@ Copy the following files from the upstream libindi repository when you are ready
 
 Source:
 https://github.com/indilib/indi/tree/master/cmake_modules
+
+The GitHub Actions INDI driver workflow fetches these files automatically during CI builds.
