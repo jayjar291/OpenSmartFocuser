@@ -90,7 +90,7 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		INDI::PropertyText RawOutputTP {1};
 
 		// Number properties.
-		// ShutterPositionNP: shutter servo angle 0-180.
+		// ShutterPositionNP: shutter servo angle 0-270.
 		// FlatPanelBrightnessNP: flat panel PWM brightness 0-255.
 		INDI::PropertyNumber ShutterPositionNP {1};
 		INDI::PropertyNumber FlatPanelBrightnessNP {1};
