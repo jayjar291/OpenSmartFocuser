@@ -614,7 +614,7 @@ void handleSetFlatPanelBrightness(const char* parameters, size_t parametersLengt
     return;
   }
 
-  Addons::SetFlatPanelBrightness(static_cast<uint8_t>(brightness));
+  Addons::setFlatPanelBrightness(static_cast<uint8_t>(brightness));
   gSerial->println(kResponseAck);
 }
 
@@ -642,7 +642,7 @@ void handleSetShutterPosition(const char* parameters, size_t parametersLength) {
     return;
   }
 
-  Addons::SetShutterPosition(static_cast<uint16_t>(position));
+  Addons::setShutterPosition(static_cast<uint16_t>(position));
   gSerial->println(kResponseAck);
 }
 
