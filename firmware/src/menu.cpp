@@ -344,7 +344,7 @@ void initMenu() {
   DebugSerial::printFramed("initMenu: begin");
   menu.begin(&idleScreen);
   DebugSerial::printFramed("initMenu: starmap begin");
-  StarMap::begin(&canvas);
+  StarMap::begin(&tft);
   StarMap::setTarget(IDLE_STAR_MAP_CENTER_RA_DEG,
                      IDLE_STAR_MAP_CENTER_DEC_DEG,
                      "Idle Target");

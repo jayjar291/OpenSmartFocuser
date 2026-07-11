@@ -237,7 +237,7 @@ class IdleScreen : public Screen {
     StarMap::Viewport viewport = {x, y, width, height};
     TFT_eSprite* sprite = StarMap::getSprite(viewport, fovDeg);
     if (sprite != nullptr) {
-      sprite->pushSprite(x, y);
+      sprite->pushToSprite(&canvas, x, y);
     }
 
     // Center marker for configured pointing target is currently handled
