@@ -6,6 +6,7 @@
 #include "PayloadParser.h"
 #include "preset.h"
 #include "menu.h"
+#include "star_map_sprite_api.h"
 
 #include <cstring>
 
@@ -50,6 +51,26 @@ bool readInt32Arg(const ParsedArgs& args, uint8_t index, int32_t& outValue) {
     return false;
   }
   return PayloadParserFixed::asInt32(args.args[index], outValue);
+}
+
+bool readFloatArg(const ParsedArgs& args, uint8_t index, float& outValue) {
+  if (index >= args.count) {
+    return false;
+  }
+
+  // Accept native float tokens.
+  if (PayloadParserFixed::asFloat(args.args[index], outValue)) {
+    return true;
+  }
+
+  // Also accept integer tokens and promote to float.
+  int32_t i32Value = 0;
+  if (PayloadParserFixed::asInt32(args.args[index], i32Value)) {
+    outValue = static_cast<float>(i32Value);
+    return true;
+  }
+
+  return false;
 }
 
 bool readNonEmptyStringArg(const ParsedArgs& args, uint8_t index, const char*& outValue) {
@@ -218,22 +239,54 @@ void handleHome(const char* parameters, size_t parametersLength) {
 
 //-----------------------------------------------starmap target commands below------------------------------------------------------
 
+//:TG# get DSO target RA, DEC, name, response :TG<RA>,<DEC>,<name>#
 void handleGetTarget(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
-  gSerial->println(":TODO#");
+  float raDeg = 0.0f;
+  float decDeg = 0.0f;
+  const char* name = nullptr;
+  StarMap::getTarget(raDeg, decDeg, name);
+
+  gSerial->print(":TG");
+  gSerial->print(raDeg, 4);
+  gSerial->print(",");
+  gSerial->print(decDeg, 4);
+  gSerial->print(",");
+  if (name != nullptr) {
+    gSerial->print(name);
+  }
+  gSerial->println("#");
 }
 
+//:TS<RA>,<DEC>,<name># set DSO target RA, DEC, response :ACK#.
 void handleSetTarget(const char* parameters, size_t parametersLength) {
-  (void)parameters;
-  (void)parametersLength;
-  gSerial->println(":TODO#");
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 3, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  float raDeg = 0.0f;
+  float decDeg = 0.0f;
+  const char* name = nullptr;
+  if (!readFloatArg(args, 0, raDeg) || !readFloatArg(args, 1, decDeg) ||
+      !readNonEmptyStringArg(args, 2, name)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  StarMap::setTarget(raDeg, decDeg, name);
+  gSerial->println(kResponseAck);
 }
 
+//:TC# clear DSO target, response :ACK#.
 void handleClearTarget(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
-  gSerial->println(":TODO#");
+  StarMap::clearTarget();
+  gSerial->println(kResponseAck);
 }
 
 //----------------------------------------------preset commands below------------------------------------------------------

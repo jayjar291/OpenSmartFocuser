@@ -26,10 +26,10 @@ const CommandEntry kCommands[] = {
   //:HM# start homing sequence, response :ACK#
   {":HM", SerialCommandHandler::handleHome},
   //--------------------------------------------------------------starmap target commands below------------------------------------------------------
-  //:TI# get DSO target RA, DEC, name, response :TI<RA>,<DEC>,<name>#
-  {":TI", SerialCommandHandler::handleGetTarget},
-  //:TG<RA>,<DEC>,<name># set DSO target RA, DEC, response :ACK#.
-  {":TG", SerialCommandHandler::handleSetTarget},
+  //:TG# get DSO target RA, DEC, name, response :TG<RA>,<DEC>,<name>#
+  {":TG", SerialCommandHandler::handleGetTarget},
+  //:TS<RA>,<DEC>,<name># set DSO target RA, DEC, response :ACK#.
+  {":TS", SerialCommandHandler::handleSetTarget},
   //:TC# clear DSO target, response :ACK#.
   {":TC", SerialCommandHandler::handleClearTarget},
   //--------------------------------------------------------------preset commands below------------------------------------------------------

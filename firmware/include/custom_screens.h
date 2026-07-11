@@ -8,6 +8,7 @@
 #include "lucide28.h"
 #include "movement.h"
 #include "preset.h"
+#include "star_map_sprite_api.h"
 #include "star_map_renderer.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
@@ -218,20 +219,29 @@ class IdleScreen : public Screen {
     // Draw a subtle border around the map viewport.
     canvas.drawRect(x, y, width, height, IDLE_COLOR_SPACER);
 
-    StarMapRenderer::Viewport viewport = {x, y, width, height};
-    StarMapRenderer::forEachProjectedStar(
-        viewport,
-        fovDeg,
-        idleMapCenterRaDeg,
-        idleMapCenterDecDeg,
-        &IdleScreen::drawProjectedStar,
-        this);
+    // Old star-map renderer path kept for reference during migration.
+    // StarMapRenderer::Viewport viewport = {x, y, width, height};
+    // StarMapRenderer::forEachProjectedStar(
+    //     viewport,
+    //     fovDeg,
+    //     idleMapCenterRaDeg,
+    //     idleMapCenterDecDeg,
+    //     &IdleScreen::drawProjectedStar,
+    //     this);
+    //
+    // const int cx = StarMapRenderer::centerX(viewport);
+    // const int cy = StarMapRenderer::centerY(viewport);
+    // canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
+    // canvas.drawString(kIconTarget, cx - 3, cy - 5);
 
-    // Center marker for configured pointing target.
-    const int cx = StarMapRenderer::centerX(viewport);
-    const int cy = StarMapRenderer::centerY(viewport);
-    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
-    canvas.drawString(kIconTarget, cx - 3, cy - 5);
+    StarMap::Viewport viewport = {x, y, width, height};
+    TFT_eSprite* sprite = StarMap::getSprite(viewport, fovDeg);
+    if (sprite != nullptr) {
+      sprite->pushSprite(x, y);
+    }
+
+    // Center marker for configured pointing target is currently handled
+    // inside the placeholder sprite returned by StarMap::getSprite().
   }
 
   void onSelectShortPress() {

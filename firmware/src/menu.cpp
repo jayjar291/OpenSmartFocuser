@@ -6,6 +6,7 @@
 #include "movement.h"
 #include "preset.h"
 #include "debug_serial.h"
+#include "star_map_sprite_api.h"
 
 OpenMenuOS menu(PIN_BUTTON_UP, PIN_BUTTON_DOWN, PIN_BUTTON_SELECT);
 
@@ -342,6 +343,12 @@ void initMenu() {
 
   DebugSerial::printFramed("initMenu: begin");
   menu.begin(&idleScreen);
+  DebugSerial::printFramed("initMenu: starmap begin");
+  StarMap::begin(&canvas);
+  StarMap::setTarget(IDLE_STAR_MAP_CENTER_RA_DEG,
+                     IDLE_STAR_MAP_CENTER_DEC_DEG,
+                     "Idle Target");
+
   DebugSerial::printFramed("initMenu: done");
 }
 
