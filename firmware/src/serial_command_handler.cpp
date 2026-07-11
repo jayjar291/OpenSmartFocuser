@@ -6,7 +6,7 @@
 #include "PayloadParser.h"
 #include "preset.h"
 #include "menu.h"
-#include "star_map_sprite_api.h"
+#include "StarMap.h"
 
 #include <cstring>
 

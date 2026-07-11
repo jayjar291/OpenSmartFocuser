@@ -6,7 +6,7 @@
 #include "movement.h"
 #include "preset.h"
 #include "debug_serial.h"
-#include "star_map_sprite_api.h"
+#include "StarMap.h"
 
 OpenMenuOS menu(PIN_BUTTON_UP, PIN_BUTTON_DOWN, PIN_BUTTON_SELECT);
 

@@ -8,7 +8,7 @@
 #include "lucide28.h"
 #include "movement.h"
 #include "preset.h"
-#include "star_map_sprite_api.h"
+#include "StarMap.h"
 #include "star_map_renderer.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
@@ -215,9 +215,6 @@ class IdleScreen : public Screen {
     if (width <= 2 || height <= 2) {
       return;
     }
-
-    // Draw a subtle border around the map viewport.
-    canvas.drawRect(x, y, width, height, IDLE_COLOR_SPACER);
 
     // Old star-map renderer path kept for reference during migration.
     // StarMapRenderer::Viewport viewport = {x, y, width, height};
