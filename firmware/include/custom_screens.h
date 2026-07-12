@@ -9,7 +9,6 @@
 #include "movement.h"
 #include "preset.h"
 #include "StarMap.h"
-#include "star_map_renderer.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
 extern ScreenManager screenManager;
@@ -249,34 +248,10 @@ class IdleScreen : public Screen {
   }
 
  private:
-  static void drawProjectedStar(const StarMapRenderer::StarPoint& point, void* userData) {
-    (void)userData;
-    if (point.radius > 0) {
-      canvas.fillCircle(point.x, point.y, point.radius, point.color);
-    } else {
-      canvas.drawPixel(point.x, point.y, point.color);
-    }
-  }
-
   void drawStarMap(int x, int y, int width, int height, float fovDeg) {
     if (width <= 2 || height <= 2) {
       return;
     }
-
-    // Old star-map renderer path kept for reference during migration.
-    // StarMapRenderer::Viewport viewport = {x, y, width, height};
-    // StarMapRenderer::forEachProjectedStar(
-    //     viewport,
-    //     fovDeg,
-    //     idleMapCenterRaDeg,
-    //     idleMapCenterDecDeg,
-    //     &IdleScreen::drawProjectedStar,
-    //     this);
-    //
-    // const int cx = StarMapRenderer::centerX(viewport);
-    // const int cy = StarMapRenderer::centerY(viewport);
-    // canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
-    // canvas.drawString(kIconTarget, cx - 3, cy - 5);
 
     StarMap::Viewport viewport = {x, y, width, height};
     TFT_eSprite* sprite = StarMap::getSprite(viewport, fovDeg);
