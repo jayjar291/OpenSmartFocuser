@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // INDI driver for OpenSmartFocuser.
 // This class owns serial transport, protocol mapping, and custom UI properties.
@@ -79,6 +80,10 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		// Snooped telescope target cache and refresh loop.
 		bool syncStarMapTarget();
 		void restartStarMapRefreshTimer();
+		void refreshTargetSnoopSubscriptions();
+		void refreshDiscoveredTargetDevices();
+		void reloadDiscoveredTargetDevices();
+		void registerDiscoveredTargetDevice(const std::string &deviceName);
 		bool isSelectedTargetSource(const char *deviceName) const;
 		bool snoopTargetFromDevice(XMLEle *root);
 
@@ -90,7 +95,7 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 
 		// Text properties.
 		// UsbPortTP: user-selected serial device path.
-		// TargetSourceTP: selected telescope or mount driver to snoop.
+		// TargetSourceTP: selected telescope/mount driver source.
 		// RawCommandTP/RawOutputTP: manual command testing and last output display.
 		INDI::PropertyText UsbPortTP {1};
 		INDI::PropertyText TargetSourceTP {1};
@@ -100,17 +105,21 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		// Number properties.
 		// ShutterPositionNP: shutter servo angle 0-270.
 		// FlatPanelBrightnessNP: flat panel PWM brightness 0-255.
-		// StarMapRefreshRateNP: refresh interval for sending TS target updates.
+		// StarMapRefreshRateNP: update interval in ms for sending TS target updates.
 		INDI::PropertyNumber ShutterPositionNP {1};
 		INDI::PropertyNumber FlatPanelBrightnessNP {1};
 		INDI::PropertyNumber StarMapRefreshRateNP {1};
 
 		// Switch properties.
 		// MotorControlSP: enable/disable motor driver.
+		// TargetSourceListSP: discovered telescope drivers as one-of-many buttons.
+		// TargetSourceRefreshSP: rebuild the discovered telescope list.
 		// SpeedPresetSP: 5 speed presets mapped to firmware :MS0..:MS4.
 		// HomeSP/RebootSP: trigger one-shot system actions.
 		// RawSendSP: send manual frame from RawCommandTP.
 		INDI::PropertySwitch MotorControlSP {2};
+		INDI::PropertySwitch TargetSourceListSP {1};
+		INDI::PropertySwitch TargetSourceRefreshSP {1};
 		INDI::PropertySwitch SpeedPresetSP {5};
 		INDI::PropertySwitch ShutterPresetSP {2};
 		INDI::PropertySwitch FlatPanelPresetSP {2};
@@ -132,5 +141,6 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		double snoopedTargetRaDeg { 0.0 };
 		double snoopedTargetDecDeg { 0.0 };
 		std::string snoopedTargetName;
+		std::vector<std::string> discoveredTargetDevices;
 		INDI::Timer starMapRefreshTimer {};
 };
