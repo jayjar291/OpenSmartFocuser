@@ -7,6 +7,7 @@
 #include "indipropertynumber.h"
 #include "indipropertyswitch.h"
 #include "indipropertytext.h"
+#include "inditimer.h"
 
 #include <cstdint>
 #include <string>
@@ -75,6 +76,11 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		void applyLimits(int32_t minSteps, int32_t maxSteps);
 		void updateAddonInterfaces();
 		void syncAdvertisedInterfaces();
+		// Snooped telescope target cache and refresh loop.
+		bool syncStarMapTarget();
+		void restartStarMapRefreshTimer();
+		bool isSelectedTargetSource(const char *deviceName) const;
+		bool snoopTargetFromDevice(XMLEle *root);
 
 		// UI/state helpers.
 		void updateSpeedSelection(uint32_t speedIndex);
@@ -84,16 +90,20 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 
 		// Text properties.
 		// UsbPortTP: user-selected serial device path.
+		// TargetSourceTP: selected telescope or mount driver to snoop.
 		// RawCommandTP/RawOutputTP: manual command testing and last output display.
 		INDI::PropertyText UsbPortTP {1};
+		INDI::PropertyText TargetSourceTP {1};
 		INDI::PropertyText RawCommandTP {1};
 		INDI::PropertyText RawOutputTP {1};
 
 		// Number properties.
 		// ShutterPositionNP: shutter servo angle 0-270.
 		// FlatPanelBrightnessNP: flat panel PWM brightness 0-255.
+		// StarMapRefreshRateNP: refresh interval for sending TS target updates.
 		INDI::PropertyNumber ShutterPositionNP {1};
 		INDI::PropertyNumber FlatPanelBrightnessNP {1};
+		INDI::PropertyNumber StarMapRefreshRateNP {1};
 
 		// Switch properties.
 		// MotorControlSP: enable/disable motor driver.
@@ -118,4 +128,9 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		int32_t cachedMaxSteps { 200000 };
 		bool hasShutterAddon { false };
 		bool hasFlatPanelAddon { false };
+		bool snoopedTargetValid { false };
+		double snoopedTargetRaDeg { 0.0 };
+		double snoopedTargetDecDeg { 0.0 };
+		std::string snoopedTargetName;
+		INDI::Timer starMapRefreshTimer {};
 };
