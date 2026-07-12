@@ -40,6 +40,26 @@ float clampDec(float decDeg) {
   return decDeg;
 }
 
+float clampDecToViewport(float decDeg, float halfFovDeg) {
+  const float clampedHalfFov = (halfFovDeg < 0.0f) ? 0.0f : halfFovDeg;
+  float minCenterDec = -90.0f + clampedHalfFov;
+  float maxCenterDec = 90.0f - clampedHalfFov;
+
+  if (minCenterDec > maxCenterDec) {
+    minCenterDec = 0.0f;
+    maxCenterDec = 0.0f;
+  }
+
+  float dec = clampDec(decDeg);
+  if (dec < minCenterDec) {
+    dec = minCenterDec;
+  }
+  if (dec > maxCenterDec) {
+    dec = maxCenterDec;
+  }
+  return dec;
+}
+
 uint16_t starColorFromMagnitudeTenths(int8_t magTenths) {
   uint8_t redBits = 8;
   if (magTenths <= 10) {
@@ -146,8 +166,8 @@ TFT_eSprite* getSprite(const Viewport& viewport, float fovDeg) {
 
   gSprite->fillSprite(bg);
 
-  const float centerDec = clampDec(gDecDeg);
   const float halfFovDeg = fovDeg * 0.5f;
+  const float centerDec = clampDecToViewport(gDecDeg, halfFovDeg);
   const float invFov = 1.0f / fovDeg;
   const float cosDec = cosf(centerDec * 0.01745329252f);
   const float raScale = (fabsf(cosDec) < 0.1f) ? 0.1f : fabsf(cosDec);
