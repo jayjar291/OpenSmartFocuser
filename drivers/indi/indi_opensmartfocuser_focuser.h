@@ -7,9 +7,11 @@
 #include "indipropertynumber.h"
 #include "indipropertyswitch.h"
 #include "indipropertytext.h"
+#include "inditimer.h"
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // INDI driver for OpenSmartFocuser.
 // This class owns serial transport, protocol mapping, and custom UI properties.
@@ -75,6 +77,15 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		void applyLimits(int32_t minSteps, int32_t maxSteps);
 		void updateAddonInterfaces();
 		void syncAdvertisedInterfaces();
+		// Snooped telescope target cache and refresh loop.
+		bool syncStarMapTarget();
+		void restartStarMapRefreshTimer();
+		void refreshTargetSnoopSubscriptions();
+		void refreshDiscoveredTargetDevices();
+		void reloadDiscoveredTargetDevices();
+		void registerDiscoveredTargetDevice(const std::string &deviceName);
+		bool isSelectedTargetSource(const char *deviceName) const;
+		bool snoopTargetFromDevice(XMLEle *root);
 
 		// UI/state helpers.
 		void updateSpeedSelection(uint32_t speedIndex);
@@ -84,23 +95,31 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 
 		// Text properties.
 		// UsbPortTP: user-selected serial device path.
+		// TargetSourceTP: selected telescope/mount driver source.
 		// RawCommandTP/RawOutputTP: manual command testing and last output display.
 		INDI::PropertyText UsbPortTP {1};
+		INDI::PropertyText TargetSourceTP {1};
 		INDI::PropertyText RawCommandTP {1};
 		INDI::PropertyText RawOutputTP {1};
 
 		// Number properties.
 		// ShutterPositionNP: shutter servo angle 0-270.
 		// FlatPanelBrightnessNP: flat panel PWM brightness 0-255.
+		// StarMapRefreshRateNP: update interval in ms for sending TS target updates.
 		INDI::PropertyNumber ShutterPositionNP {1};
 		INDI::PropertyNumber FlatPanelBrightnessNP {1};
+		INDI::PropertyNumber StarMapRefreshRateNP {1};
 
 		// Switch properties.
 		// MotorControlSP: enable/disable motor driver.
+		// TargetSourceListSP: discovered telescope drivers as one-of-many buttons.
+		// TargetSourceRefreshSP: rebuild the discovered telescope list.
 		// SpeedPresetSP: 5 speed presets mapped to firmware :MS0..:MS4.
 		// HomeSP/RebootSP: trigger one-shot system actions.
 		// RawSendSP: send manual frame from RawCommandTP.
 		INDI::PropertySwitch MotorControlSP {2};
+		INDI::PropertySwitch TargetSourceListSP {1};
+		INDI::PropertySwitch TargetSourceRefreshSP {1};
 		INDI::PropertySwitch SpeedPresetSP {5};
 		INDI::PropertySwitch ShutterPresetSP {2};
 		INDI::PropertySwitch FlatPanelPresetSP {2};
@@ -118,4 +137,10 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		int32_t cachedMaxSteps { 200000 };
 		bool hasShutterAddon { false };
 		bool hasFlatPanelAddon { false };
+		bool snoopedTargetValid { false };
+		double snoopedTargetRaDeg { 0.0 };
+		double snoopedTargetDecDeg { 0.0 };
+		std::string snoopedTargetName;
+		std::vector<std::string> discoveredTargetDevices;
+		INDI::Timer starMapRefreshTimer {};
 };

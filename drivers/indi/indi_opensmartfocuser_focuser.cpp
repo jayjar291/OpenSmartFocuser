@@ -2,11 +2,16 @@
 #include "indi_opensmartfocuser_focuser.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdlib>
 #include <cerrno>
 #include <cctype>
 #include <climits>
+#include <cstdio>
 #include <cstring>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <string>
 
 #include <fcntl.h>
@@ -33,6 +38,9 @@ constexpr uint32_t SHUTTER_OFF = 0;
 constexpr uint32_t SHUTTER_ON = 270;
 constexpr uint32_t FLAT_PANEL_OFF = 0;
 constexpr uint32_t FLAT_PANEL_ON = 255;
+constexpr int DEFAULT_STARMAP_REFRESH_MS = 100;
+constexpr int MIN_STARMAP_REFRESH_MS = 0;
+constexpr int MAX_STARMAP_REFRESH_MS = 600000;
 
 // Parse a full unsigned integer payload and reject partial/invalid conversions.
 bool parsePositiveInteger(const std::string &text, uint32_t &value)
@@ -72,6 +80,66 @@ bool startsWith(const std::string &text, const std::string &prefix)
     return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
 }
 
+const char *xmlAttributeValue(XMLEle *root, const char *attributeName)
+{
+    if (root == nullptr || attributeName == nullptr)
+        return nullptr;
+
+    XMLAtt *attribute = findXMLAtt(root, attributeName);
+    return attribute != nullptr ? valuXMLAtt(attribute) : nullptr;
+}
+
+std::string sanitizeFrameField(const std::string &value)
+{
+    std::string sanitized = value;
+    for (char &ch : sanitized)
+    {
+        if (ch == ',' || ch == '#' || ch == '\r' || ch == '\n')
+            ch = ' ';
+    }
+    return sanitized;
+}
+
+std::string trimCopy(const std::string &text)
+{
+    const std::string::size_type first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+        return std::string();
+
+    const std::string::size_type last = text.find_last_not_of(" \t\r\n");
+    return text.substr(first, last - first + 1);
+}
+
+bool parseDoubleText(const char *text, double &value)
+{
+    if (text == nullptr || text[0] == '\0')
+        return false;
+
+    char *endptr = nullptr;
+    errno = 0;
+    const double converted = std::strtod(text, &endptr);
+    if (errno != 0 || endptr == text || *endptr != '\0')
+        return false;
+
+    value = converted;
+    return true;
+}
+
+bool isTargetNameProperty(const char *propertyName)
+{
+    if (propertyName == nullptr)
+        return false;
+
+    return std::strcmp(propertyName, "TARGET_NAME") == 0 || std::strcmp(propertyName, "OBJECT") == 0 ||
+           std::strcmp(propertyName, "OBJECT_NAME") == 0 || std::strcmp(propertyName, "TARGET") == 0;
+}
+
+bool isEquatorialProperty(const char *propertyName)
+{
+    return propertyName != nullptr && (std::strstr(propertyName, "EQUATORIAL") != nullptr ||
+                                       std::strcmp(propertyName, "TARGET_COORD") == 0);
+}
+
 // Escape non-printable bytes so logs and monitor output remain readable.
 std::string escapeFrameForLog(const std::string &text)
 {
@@ -102,6 +170,7 @@ std::string escapeFrameForLog(const std::string &text)
 // because transport is handled manually in this class.
 OpenSmartFocuser::OpenSmartFocuser() : INDI::DustCapInterface(this), INDI::LightBoxInterface(this)
 {
+    starMapRefreshTimer.callOnTimeout([this]() { syncStarMapTarget(); });
     FI::SetCapability(FOCUSER_CAN_ABS_MOVE | FOCUSER_CAN_REL_MOVE | FOCUSER_CAN_ABORT);
     setSupportedConnections(CONNECTION_NONE);
     setVersion(CDRIVER_VERSION_MAJOR, CDRIVER_VERSION_MINOR);
@@ -128,6 +197,8 @@ bool OpenSmartFocuser::initProperties()
 
     initCustomProperties();
     defineProperty(UsbPortTP);
+    defineProperty(TargetSourceTP);
+    defineProperty(StarMapRefreshRateNP);
 
     cachedPosition = static_cast<uint32_t>(FocusAbsPosNP[0].getValue());
     LOG_INFO("Initialized minimal OpenSmartFocuser USB serial driver.");
@@ -140,6 +211,25 @@ bool OpenSmartFocuser::updateProperties()
     INDI::Focuser::updateProperties();
     updateAddonInterfaces();
     updateCustomPropertyVisibility();
+
+    if (isConnected())
+    {
+        refreshTargetSnoopSubscriptions();
+        restartStarMapRefreshTimer();
+
+        const char *selectedName = TargetSourceTP[0].getText();
+        if (selectedName != nullptr && trimCopy(selectedName).empty() == false && !snoopedTargetValid)
+        {
+            TargetSourceTP.setState(IPS_BUSY);
+            TargetSourceTP.apply();
+        }
+    }
+    else
+    {
+        starMapRefreshTimer.stop();
+        TargetSourceTP.setState(IPS_IDLE);
+        TargetSourceTP.apply();
+    }
 
     if (isConnected())
     {
@@ -161,6 +251,8 @@ bool OpenSmartFocuser::Connect()
 {
     if (!openSerialPort())
         return false;
+
+    reloadDiscoveredTargetDevices();
 
     std::string response;
     if (!sendCommand(":PP", "", response) || response != ":PP#")
@@ -203,6 +295,8 @@ bool OpenSmartFocuser::Connect()
 
     updateAddonInterfaces();
     syncAdvertisedInterfaces();
+    refreshTargetSnoopSubscriptions();
+    restartStarMapRefreshTimer();
 
     LOG_INFO("Connected over USB serial.");
     return true;
@@ -211,9 +305,13 @@ bool OpenSmartFocuser::Connect()
 // Close serial transport and leave properties to be hidden by updateProperties().
 bool OpenSmartFocuser::Disconnect()
 {
+    starMapRefreshTimer.stop();
     closeSerialPort();
     hasShutterAddon = false;
     hasFlatPanelAddon = false;
+    snoopedTargetValid = false;
+    discoveredTargetDevices.clear();
+    refreshDiscoveredTargetDevices();
     updateAddonInterfaces();
     syncAdvertisedInterfaces();
     LOG_INFO("Disconnected USB serial.");
@@ -260,13 +358,245 @@ bool OpenSmartFocuser::AbortFocuser()
 
 bool OpenSmartFocuser::ISSnoopDevice(XMLEle *root)
 {
-    return INDI::LightBoxInterface::snoop(root) || INDI::Focuser::ISSnoopDevice(root);
+    const bool snoopedTarget = snoopTargetFromDevice(root);
+    return INDI::LightBoxInterface::snoop(root) || INDI::Focuser::ISSnoopDevice(root) || snoopedTarget;
 }
 
 bool OpenSmartFocuser::saveConfigItems(FILE *fp)
 {
     INDI::LightBoxInterface::saveConfigItems(fp);
+    TargetSourceTP.save(fp);
+    StarMapRefreshRateNP.save(fp);
     return INDI::Focuser::saveConfigItems(fp);
+}
+
+bool OpenSmartFocuser::isSelectedTargetSource(const char *deviceName) const
+{
+    if (deviceName == nullptr || deviceName[0] == '\0')
+        return false;
+
+    const char *selectedName = TargetSourceTP[0].getText();
+    if (selectedName == nullptr || selectedName[0] == '\0')
+        return false;
+
+    return trimCopy(selectedName) == trimCopy(deviceName);
+}
+
+void OpenSmartFocuser::refreshTargetSnoopSubscriptions()
+{
+    IDSnoopDevice("*", "EQUATORIAL_EOD_COORD");
+    IDSnoopDevice("*", "EQUATORIAL_COORD");
+    IDSnoopDevice("*", "TARGET_NAME");
+    IDSnoopDevice("*", "OBJECT");
+    IDSnoopDevice("*", "OBJECT_NAME");
+
+    const char *selectedName = TargetSourceTP[0].getText();
+    if (selectedName == nullptr)
+        return;
+
+    const std::string sourceName = trimCopy(selectedName);
+    if (sourceName.empty())
+        return;
+
+    IDSnoopDevice(sourceName.c_str(), "EQUATORIAL_EOD_COORD");
+    IDSnoopDevice(sourceName.c_str(), "EQUATORIAL_COORD");
+    IDSnoopDevice(sourceName.c_str(), "TARGET_NAME");
+    IDSnoopDevice(sourceName.c_str(), "OBJECT");
+    IDSnoopDevice(sourceName.c_str(), "OBJECT_NAME");
+}
+
+void OpenSmartFocuser::refreshDiscoveredTargetDevices()
+{
+    TargetSourceListSP.resize(std::max<size_t>(1, discoveredTargetDevices.size()));
+
+    if (discoveredTargetDevices.empty())
+    {
+        TargetSourceListSP[0].fill("NO_TELESCOPE_DRIVERS", "No telescope drivers discovered", ISS_OFF);
+        TargetSourceListSP.setPermission(IP_RO);
+        TargetSourceListSP.setState(IPS_IDLE);
+    }
+    else
+    {
+        const std::string selectedName = trimCopy(TargetSourceTP[0].getText());
+        TargetSourceListSP.setPermission(IP_RW);
+        TargetSourceListSP.reset();
+
+        for (size_t index = 0; index < discoveredTargetDevices.size(); ++index)
+        {
+            const std::string widgetName = "TELESCOPE_DRIVER_" + std::to_string(index + 1);
+            const bool isSelected = discoveredTargetDevices[index] == selectedName;
+            TargetSourceListSP[static_cast<int>(index)].fill(widgetName.c_str(), discoveredTargetDevices[index].c_str(),
+                                                             isSelected ? ISS_ON : ISS_OFF);
+        }
+
+        TargetSourceListSP.setState(IPS_OK);
+    }
+
+    TargetSourceListSP.apply();
+}
+
+void OpenSmartFocuser::reloadDiscoveredTargetDevices()
+{
+    discoveredTargetDevices.clear();
+
+    FILE *pipe = popen("indi_getdevice 2>/dev/null", "r");
+    if (pipe == nullptr)
+    {
+        refreshDiscoveredTargetDevices();
+        return;
+    }
+
+    std::array<char, 256> lineBuffer {};
+    while (fgets(lineBuffer.data(), static_cast<int>(lineBuffer.size()), pipe) != nullptr)
+    {
+        const std::string deviceName = trimCopy(lineBuffer.data());
+        if (deviceName.empty() || deviceName == getDeviceName())
+            continue;
+
+        registerDiscoveredTargetDevice(deviceName);
+    }
+
+    pclose(pipe);
+    refreshDiscoveredTargetDevices();
+}
+
+void OpenSmartFocuser::registerDiscoveredTargetDevice(const std::string &deviceName)
+{
+    const std::string trimmedName = trimCopy(deviceName);
+    if (trimmedName.empty())
+        return;
+
+    const auto match = std::find(discoveredTargetDevices.begin(), discoveredTargetDevices.end(), trimmedName);
+    if (match != discoveredTargetDevices.end())
+        return;
+
+    discoveredTargetDevices.push_back(trimmedName);
+    std::sort(discoveredTargetDevices.begin(), discoveredTargetDevices.end());
+    refreshDiscoveredTargetDevices();
+}
+
+void OpenSmartFocuser::restartStarMapRefreshTimer()
+{
+    if (!isConnected() || serialFD < 0)
+    {
+        starMapRefreshTimer.stop();
+        return;
+    }
+
+    const int refreshMs = static_cast<int>(StarMapRefreshRateNP[0].getValue());
+    if (refreshMs <= 0)
+    {
+        starMapRefreshTimer.stop();
+        return;
+    }
+
+    starMapRefreshTimer.setInterval(refreshMs);
+    starMapRefreshTimer.start();
+}
+
+bool OpenSmartFocuser::snoopTargetFromDevice(XMLEle *root)
+{
+    if (root == nullptr)
+        return false;
+
+    const char *deviceName = xmlAttributeValue(root, "device");
+    const char *propertyName = xmlAttributeValue(root, "name");
+
+    if (deviceName != nullptr && isEquatorialProperty(propertyName))
+        registerDiscoveredTargetDevice(deviceName);
+
+    if (!isSelectedTargetSource(deviceName))
+        return false;
+
+    const char *tagName = tagXMLEle(root);
+    const bool targetNameProperty = isTargetNameProperty(propertyName);
+    const bool equatorialProperty = isEquatorialProperty(propertyName);
+
+    bool updated = false;
+
+    if (equatorialProperty && tagName != nullptr && std::strcmp(tagName, "setNumberVector") == 0)
+    {
+        double raHours = 0.0;
+        double decDeg = 0.0;
+        bool parsedRa = false;
+        bool parsedDec = false;
+
+        for (XMLEle *child = nextXMLEle(root, 1); child != nullptr; child = nextXMLEle(root, 0))
+        {
+            const char *childName = xmlAttributeValue(child, "name");
+            const char *childValue = pcdataXMLEle(child);
+            if (childName == nullptr || childValue == nullptr)
+                continue;
+
+            if (std::strcmp(childName, "RA") == 0)
+                parsedRa = parseDoubleText(childValue, raHours);
+            else if (std::strcmp(childName, "DEC") == 0)
+                parsedDec = parseDoubleText(childValue, decDeg);
+        }
+
+        if (parsedRa && parsedDec)
+        {
+            snoopedTargetRaDeg = raHours * 15.0;
+            snoopedTargetDecDeg = decDeg;
+            snoopedTargetValid = true;
+            updated = true;
+        }
+    }
+
+    if (targetNameProperty && tagName != nullptr && std::strcmp(tagName, "setTextVector") == 0)
+    {
+        const XMLEle *nameElement = nextXMLEle(root, 1);
+        const char *targetName = nullptr;
+
+        for (XMLEle *child = const_cast<XMLEle *>(nameElement); child != nullptr; child = nextXMLEle(root, 0))
+        {
+            const char *childName = xmlAttributeValue(child, "name");
+            if (childName != nullptr &&
+                (std::strcmp(childName, "TARGET_NAME") == 0 || std::strcmp(childName, "OBJECT") == 0 ||
+                 std::strcmp(childName, "NAME") == 0))
+            {
+                targetName = pcdataXMLEle(child);
+                break;
+            }
+
+            if (targetName == nullptr)
+                targetName = pcdataXMLEle(child);
+        }
+
+        if (targetName != nullptr)
+        {
+            snoopedTargetName = targetName;
+            updated = true;
+        }
+    }
+
+    if (updated)
+    {
+        TargetSourceTP.setState(IPS_OK);
+        TargetSourceTP.apply();
+    }
+
+    return updated;
+}
+
+bool OpenSmartFocuser::syncStarMapTarget()
+{
+    if (!isConnected() || serialFD < 0 || !snoopedTargetValid)
+        return false;
+
+    const char *sourceName = TargetSourceTP[0].getText();
+    if (sourceName == nullptr || sourceName[0] == '\0')
+        return false;
+
+    const std::string targetName = sanitizeFrameField(snoopedTargetName.empty() ? std::string(sourceName) : snoopedTargetName);
+    if (targetName.empty())
+        return false;
+
+    std::ostringstream payload;
+    payload.setf(std::ios::fixed, std::ios::floatfield);
+    payload << std::setprecision(6) << snoopedTargetRaDeg << ',' << snoopedTargetDecDeg << ',' << targetName;
+
+    return commandAck(":TS", payload.str());
 }
 
 IPState OpenSmartFocuser::ParkCap()
@@ -356,6 +686,21 @@ bool OpenSmartFocuser::ISNewNumber(const char *dev, const char *name, double val
         return true;
     }
 
+    if (StarMapRefreshRateNP.isNameMatch(name))
+    {
+        StarMapRefreshRateNP.update(values, names, n);
+
+        const int refreshMs = static_cast<int>(StarMapRefreshRateNP[0].getValue());
+        const bool ok = refreshMs >= MIN_STARMAP_REFRESH_MS && refreshMs <= MAX_STARMAP_REFRESH_MS;
+        if (!ok)
+            StarMapRefreshRateNP[0].setValue(DEFAULT_STARMAP_REFRESH_MS);
+
+        StarMapRefreshRateNP.setState(ok ? IPS_OK : IPS_ALERT);
+        StarMapRefreshRateNP.apply();
+        restartStarMapRefreshTimer();
+        return true;
+    }
+
     return INDI::Focuser::ISNewNumber(dev, name, values, names, n);
 }
 
@@ -385,6 +730,49 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
         MotorControlSP.reset();
         MotorControlSP.setState(ok ? IPS_OK : IPS_ALERT);
         MotorControlSP.apply();
+        return true;
+    }
+
+    if (TargetSourceListSP.isNameMatch(name))
+    {
+        TargetSourceListSP.update(states, names, n);
+
+        std::string selectedDevice;
+        for (size_t index = 0; index < discoveredTargetDevices.size(); ++index)
+        {
+            if (TargetSourceListSP[static_cast<int>(index)].getState() == ISS_ON)
+            {
+                selectedDevice = discoveredTargetDevices[index];
+                break;
+            }
+        }
+
+        if (!selectedDevice.empty())
+        {
+            TargetSourceTP[0].setText(selectedDevice.c_str());
+            TargetSourceTP.setState(IPS_BUSY);
+            TargetSourceTP.apply();
+            snoopedTargetValid = false;
+            snoopedTargetName.clear();
+            refreshTargetSnoopSubscriptions();
+        }
+
+        refreshDiscoveredTargetDevices();
+        restartStarMapRefreshTimer();
+        return true;
+    }
+
+    if (TargetSourceRefreshSP.isNameMatch(name))
+    {
+        TargetSourceRefreshSP.update(states, names, n);
+        reloadDiscoveredTargetDevices();
+
+        // Re-issue common snoop subscriptions for the currently selected source.
+        refreshTargetSnoopSubscriptions();
+
+        TargetSourceRefreshSP.reset();
+        TargetSourceRefreshSP.setState(IPS_OK);
+        TargetSourceRefreshSP.apply();
         return true;
     }
 
@@ -520,11 +908,32 @@ bool OpenSmartFocuser::ISNewSwitch(const char *dev, const char *name, ISState *s
 // Dispatch editable text properties (port path and manual raw command text).
 bool OpenSmartFocuser::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
 {
-    if (INDI::LightBoxInterface::processText(dev, name, texts, names, n))
-        return true;
-
     if (dev == nullptr || std::strcmp(dev, getDeviceName()) != 0)
         return INDI::Focuser::ISNewText(dev, name, texts, names, n);
+
+    // Handle our ACTIVE_DEVICES selector first so LightBoxInterface does not
+    // consume this name before we update starmap source state.
+    if (TargetSourceTP.isNameMatch(name))
+    {
+        TargetSourceTP.update(texts, names, n);
+        snoopedTargetValid = false;
+        snoopedTargetName.clear();
+        refreshTargetSnoopSubscriptions();
+
+        const char *selectedName = TargetSourceTP[0].getText();
+        if (selectedName != nullptr && trimCopy(selectedName).empty() == false)
+            TargetSourceTP.setState(IPS_BUSY);
+        else
+            TargetSourceTP.setState(IPS_IDLE);
+
+        TargetSourceTP.apply();
+        refreshDiscoveredTargetDevices();
+        restartStarMapRefreshTimer();
+        return true;
+    }
+
+    if (INDI::LightBoxInterface::processText(dev, name, texts, names, n))
+        return true;
 
     if (UsbPortTP.isNameMatch(name))
     {
@@ -550,6 +959,24 @@ void OpenSmartFocuser::initCustomProperties()
 {
     UsbPortTP[0].fill("PORT", "USB Port", "/dev/OSF");
     UsbPortTP.fill(getDeviceName(), "USB_SERIAL_PORT", "USB Serial", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
+
+    // Use the standard ACTIVE_DEVICES/ACTIVE_TELESCOPE naming for compatibility,
+    // but also expose a clearer button-based selector below.
+    TargetSourceTP[0].fill("ACTIVE_TELESCOPE", "Selected Telescope Driver", "");
+    TargetSourceTP.fill(getDeviceName(), "ACTIVE_DEVICES", "Selected Devices", MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
+
+    TargetSourceListSP[0].fill("NO_TELESCOPE_DRIVERS", "No telescope drivers discovered", ISS_OFF);
+    TargetSourceListSP.fill(getDeviceName(), "TELESCOPE_DRIVER_LIST", "Discovered Telescope Drivers", MAIN_CONTROL_TAB,
+                            IP_RO, ISR_1OFMANY, 0, IPS_IDLE);
+
+    TargetSourceRefreshSP[0].fill("REFRESH_TELESCOPE_DRIVERS", "Refresh Driver List", ISS_OFF);
+    TargetSourceRefreshSP.fill(getDeviceName(), "TELESCOPE_DRIVER_REFRESH", "Refresh Telescope Drivers", MAIN_CONTROL_TAB,
+                               IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
+
+    StarMapRefreshRateNP[0].fill("REFRESH_MS", "Update Interval (ms)", "%5.0f", MIN_STARMAP_REFRESH_MS,
+                                 MAX_STARMAP_REFRESH_MS, 10, DEFAULT_STARMAP_REFRESH_MS);
+    StarMapRefreshRateNP.fill(getDeviceName(), "STARMAP_REFRESH_RATE", "Star Map Update Rate", MAIN_CONTROL_TAB, IP_RW,
+                              60, IPS_IDLE);
 
     ShutterPositionNP[0].fill("SHUTTER_POSITION", "Shutter", "%3.0f", SHUTTER_MIN, SHUTTER_MAX, 1, SHUTTER_OFF);
     ShutterPositionNP.fill(getDeviceName(), "SHUTTER_POSITION", "Shutter Position", CUSTOM_TAB, IP_RW, 60, IPS_IDLE);
@@ -600,6 +1027,9 @@ void OpenSmartFocuser::updateCustomPropertyVisibility()
     if (isConnected())
     {
         defineProperty(UsbPortTP);
+        defineProperty(TargetSourceTP);
+        defineProperty(TargetSourceListSP);
+        defineProperty(TargetSourceRefreshSP);
         if (hasShutterAddon)
             defineProperty(ShutterPositionNP);
         if (hasFlatPanelAddon)
@@ -615,9 +1045,12 @@ void OpenSmartFocuser::updateCustomPropertyVisibility()
         defineProperty(RawCommandTP);
         defineProperty(RawSendSP);
         defineProperty(RawOutputTP);
+        refreshDiscoveredTargetDevices();
         return;
     }
 
+    deleteProperty(TargetSourceListSP.getName());
+    deleteProperty(TargetSourceRefreshSP.getName());
     deleteProperty(SpeedPresetSP.getName());
     deleteProperty(MotorControlSP.getName());
     deleteProperty(ShutterPositionNP.getName());
@@ -630,6 +1063,7 @@ void OpenSmartFocuser::updateCustomPropertyVisibility()
     deleteProperty(RawSendSP.getName());
     deleteProperty(RawOutputTP.getName());
     defineProperty(UsbPortTP);
+    defineProperty(TargetSourceTP);
 }
 
 // Open/configure POSIX serial device with 115200 8N1 raw mode.
@@ -977,7 +1411,6 @@ void OpenSmartFocuser::updateAddonInterfaces()
     {
         deleteProperty("FLAT_LIGHT_CONTROL");
         deleteProperty("FLAT_LIGHT_INTENSITY");
-        deleteProperty("ACTIVE_DEVICES");
         deleteProperty("ACTIVE_FILTER");
     }
 }
