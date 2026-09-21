@@ -1,0 +1,3 @@
+# Dependencies for osf_serial_console.py
+# tkinter ships with CPython (stdlib) — no pip package needed.
+pyserial>=3.5
