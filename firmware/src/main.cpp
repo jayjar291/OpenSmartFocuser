@@ -3,6 +3,9 @@
 #include <TMCStepper.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#if CONFIG_TINYUSB_ENABLED
+#include <USB.h>
+#endif
 #include "addons.h"
 #include "config.h"
 #include "debug_serial.h"
@@ -35,6 +38,23 @@ bool motorEnabled = false;
 
 static TaskHandle_t motorTaskHandle = nullptr;
 
+#if CONFIG_TINYUSB_ENABLED
+namespace {
+
+struct UsbDescriptorConfigurator {
+  UsbDescriptorConfigurator() {
+    USB.VID(0x1209);
+    USB.PID(0xF0C1);
+    USB.manufacturerName("JayTek");
+    USB.productName("OpenSmartFocuser");
+  }
+};
+
+UsbDescriptorConfigurator gUsbDescriptorConfigurator;
+
+}  // namespace
+#endif
+
 static void motorTask(void* /*param*/) {
   static constexpr uint32_t kHealthCheckIntervalMs = 250;
   uint32_t lastHealthCheckMs = 0;
@@ -61,8 +81,25 @@ static void motorTask(void* /*param*/) {
  * and TMC driver bring-up.
  */
 void setup() {
+#if CONFIG_TINYUSB_ENABLED && !ARDUINO_USB_CDC_ON_BOOT
+  // Initialize TinyUSB descriptors before CDC starts so host sees custom IDs/names.
+  USB.VID(0x1209);
+  USB.PID(0xF0C1);
+  USB.manufacturerName("JayTek");
+  USB.productName("OpenSmartFocuser");
+  USB.begin();
+#endif
+
   Serial.begin(115200);
   delay(100);
+
+#if CONFIG_TINYUSB_ENABLED
+  const uint32_t serialWaitStartMs = millis();
+  while (!Serial && (millis() - serialWaitStartMs) < 2000) {
+    delay(10);
+  }
+#endif
+
   SerialCommandHandler::begin(Serial);
 
   DebugSerial::printFramed("Setup: begin");

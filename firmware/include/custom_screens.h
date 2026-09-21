@@ -8,7 +8,7 @@
 #include "lucide28.h"
 #include "movement.h"
 #include "preset.h"
-#include "star_map_renderer.h"
+#include "StarMap.h"
 
 // OpenMenuOS library globals used by built-in screen input handlers.
 extern ScreenManager screenManager;
@@ -60,6 +60,9 @@ class IdleScreen : public Screen {
     // Clear the full screen first so non-bar regions stay blank.
     canvas.fillScreen(IDLE_COLOR_BG);
 
+    canvas.setTextFont(1);
+    canvas.setTextSize(1);
+
     canvas.loadFont(lucide28);
     drawStarMap(0, 0, mapWidth, mapHeight, kMapFovDeg);
     canvas.unloadFont();
@@ -101,17 +104,61 @@ class IdleScreen : public Screen {
     canvas.loadFont(lucide28);
     canvas.drawString(kIconTelescope, kTextPaddingX, bottomBarY + 3);
     canvas.unloadFont();
-    canvas.drawFastVLine(28, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    canvas.setTextFont(1);
+    canvas.setTextSize(1);
     canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BOTTOM_BAR);
-    canvas.drawString(Movement::isBusy() ? "Homing" : "Idle", 34, bottomBarY + 4);
+    const char* statusText = Movement::isBusy() ? "Homing" : "Idle";
+    canvas.drawString(statusText, 34, bottomBarY + 4, 1);
 
     char posMmText[12];
     const float posMm = static_cast<float>(pos) / static_cast<float>(FOCUSER_STEPS_PER_MM);
     snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
-    canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
 
-    // Spacer marker to separate status text from future fields.
-    canvas.drawFastVLine(120, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    float targetRaDeg = 0.0f;
+    float targetDecDeg = 0.0f;
+    const char* targetName = nullptr;
+    StarMap::getTarget(targetRaDeg, targetDecDeg, targetName);
+    (void)targetRaDeg;
+    (void)targetDecDeg;
+
+    char targetText[24];
+    if (targetName != nullptr && targetName[0] != '\0') {
+      strncpy(targetText, targetName, sizeof(targetText) - 1);
+      targetText[sizeof(targetText) - 1] = '\0';
+    } else {
+      strncpy(targetText, "No Target", sizeof(targetText) - 1);
+      targetText[sizeof(targetText) - 1] = '\0';
+    }
+
+    const int iconSepX = 28;
+    int statusSepX = 34 + canvas.textWidth(statusText, 1) + 6;
+    int posSepX = screenWidth - canvas.textWidth(posMmText, 1) - 8;
+    if (statusSepX > posSepX - 18) {
+      statusSepX = posSepX - 18;
+    }
+    if (statusSepX < iconSepX + 10) {
+      statusSepX = iconSepX + 10;
+    }
+
+    const int targetX = statusSepX + 6;
+    const int targetMaxWidth = posSepX - targetX - 2;
+    if (targetMaxWidth <= 0) {
+      targetText[0] = '\0';
+    } else {
+      while (targetText[0] != '\0' && canvas.textWidth(targetText, 1) > targetMaxWidth) {
+        size_t len = strlen(targetText);
+        if (len == 0) {
+          break;
+        }
+        targetText[len - 1] = '\0';
+      }
+    }
+    canvas.drawString(targetText, targetX, bottomBarY + 4, 1);
+
+    canvas.drawFastVLine(iconSepX, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    canvas.drawFastVLine(statusSepX, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    canvas.drawFastVLine(posSepX, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
   }
 
   void handleInput() override {
@@ -201,37 +248,19 @@ class IdleScreen : public Screen {
   }
 
  private:
-  static void drawProjectedStar(const StarMapRenderer::StarPoint& point, void* userData) {
-    (void)userData;
-    if (point.radius > 0) {
-      canvas.fillCircle(point.x, point.y, point.radius, point.color);
-    } else {
-      canvas.drawPixel(point.x, point.y, point.color);
-    }
-  }
-
   void drawStarMap(int x, int y, int width, int height, float fovDeg) {
     if (width <= 2 || height <= 2) {
       return;
     }
 
-    // Draw a subtle border around the map viewport.
-    canvas.drawRect(x, y, width, height, IDLE_COLOR_SPACER);
+    StarMap::Viewport viewport = {x, y, width, height};
+    TFT_eSprite* sprite = StarMap::getSprite(viewport, fovDeg);
+    if (sprite != nullptr) {
+      sprite->pushToSprite(&canvas, x, y);
+    }
 
-    StarMapRenderer::Viewport viewport = {x, y, width, height};
-    StarMapRenderer::forEachProjectedStar(
-        viewport,
-        fovDeg,
-        idleMapCenterRaDeg,
-        idleMapCenterDecDeg,
-        &IdleScreen::drawProjectedStar,
-        this);
-
-    // Center marker for configured pointing target.
-    const int cx = StarMapRenderer::centerX(viewport);
-    const int cy = StarMapRenderer::centerY(viewport);
-    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
-    canvas.drawString(kIconTarget, cx - 3, cy - 5);
+    // Center marker for configured pointing target is currently handled
+    // inside the placeholder sprite returned by StarMap::getSprite().
   }
 
   void onSelectShortPress() {

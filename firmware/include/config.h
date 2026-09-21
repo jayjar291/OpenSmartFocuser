@@ -1,6 +1,7 @@
 #pragma once
 
-#include "board_config/esp32_s3_devkitc1_pins.h"
+//#include "board_config/esp32_s3_devkitc1_pins.h"
+#include "board_config/esp32_s3_mainboard_OSF.h"
 
 /*
  * TFT_eSPI is configured through a custom setup header passed in build flags.

@@ -63,3 +63,8 @@ install_manifest.txt
 
 # Node modules (if applicable)
 node_modules/
+hardware/cad/mesh/Full Assembly v8.mtl
+hardware/cad/mesh/Full Assembly v8.obj
+hardware/cad/mesh/Full Assembly v8.stl
+hardware/pcb/fabrication/Gerber_OSF_Composite_board_2026-07-03.zip
+hardware/pcb/OpenSmartFocuser/OpenSmartFocuser-backups/OpenSmartFocuser-2026-06-29_160815.zip

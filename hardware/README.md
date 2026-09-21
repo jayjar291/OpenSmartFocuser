@@ -6,6 +6,9 @@ This folder contains the mechanical and electronic source files for the OpenSmar
 
 ```text
 hardware/
+├── cad/  # Mechanical CAD models and related design artifacts
+└── pcb/  # KiCad project files and fabrication outputs
+```
 ├── cad/   # Mechanical CAD models, drawings, and exports
 └── pcb/   # KiCad PCB source files and fabrication assets
 ```

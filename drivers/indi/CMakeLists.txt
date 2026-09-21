@@ -53,3 +53,9 @@ install(
   ${CMAKE_CURRENT_BINARY_DIR}/indi_opensmartfocuser_focuser.xml
   DESTINATION ${INDI_DATA_DIR}
 )
+
+install(
+  FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/99-opensmartfocuser.rules
+  DESTINATION /etc/udev/rules.d
+)

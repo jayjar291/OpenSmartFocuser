@@ -17,6 +17,9 @@ constexpr uint16_t kShutterPulseClosedUs = 500;
 constexpr uint16_t kShutterPulseOpenUs = 2500;
 constexpr uint16_t kShutterMinAngle = 0;
 constexpr uint16_t kShutterMaxAngle = 270;
+constexpr uint8_t kFlatPanelPwmChannel = 6;
+constexpr uint16_t kFlatPanelPwmFrequencyHz = 5000;
+constexpr uint8_t kFlatPanelPwmResolutionBits = 8;
 
 // ServoEasing behavior configuration.
 constexpr uint16_t kShutterInitialAngle = 0;
@@ -31,7 +34,7 @@ constexpr uint16_t kShutterOpenTransitionAngle = 210;
 // Keep servo powered briefly after movement to prevent detach/attach chatter.
 constexpr uint32_t kShutterDetachDelayMs = 350;
 
-long lastmoveMills = 0;
+uint32_t gLastShutterMoveTickMs = 0;
 
 bool gAddonsInitialized = false;
 ServoEasing gShutterServo;
@@ -64,9 +67,10 @@ bool attachShutterServoIfNeeded(uint16_t initialAngle) {
 
 void startShutterStageMove(uint16_t targetPosition, uint16_t speedDegPerSec) {
   gShutterServo.setEasingType(kShutterEasingType);
+  // Use interrupt-driven updates so servo easing continues while the main loop handles UI/serial tasks.
   gShutterServo.startEaseTo(static_cast<int>(targetPosition), speedDegPerSec, START_UPDATE_BY_INTERRUPT);
   gShutterTargetPosition = targetPosition;
-  lastmoveMills = millis();
+  gLastShutterMoveTickMs = millis();
 }
 
 void startShutterMove(uint16_t requestedPosition) {
@@ -81,7 +85,7 @@ void startShutterMove(uint16_t requestedPosition) {
     gShutterServo.write(targetPosition);
     gShutterTargetPosition = targetPosition;
     gShutterHasPendingStage = false;
-    lastmoveMills = now;
+    gLastShutterMoveTickMs = now;
     return;
   }
 
@@ -121,7 +125,7 @@ void startShutterMove(uint16_t requestedPosition) {
 
 
 void applyFlatPanelBrightness(uint8_t brightness) {
-  ledcWrite(6, brightness); // Write the brightness value to PWM channel 6 for flat panel control
+  ledcWrite(kFlatPanelPwmChannel, brightness);
   DebugSerial::printFramedValue("applyFlatPanelBrightness: brightness ", brightness, "");
 }
 
@@ -148,7 +152,7 @@ bool hasAddon(AddonType type) {
 }
 
 void initializeAddons() {
-  if ( gAddonsInitialized) {
+  if (gAddonsInitialized) {
     return;
   }
 
@@ -162,8 +166,8 @@ void initializeAddons() {
   #endif
 
   #if HAS_FLAT_FRAME_PANEL
-  ledcSetup(6, 5000, 8); // Set up PWM on channel 6 with 5 kHz frequency and 8-bit resolution for flat panel brightness control
-  ledcAttachPin(PIN_FLAT_FRAME_PANEL, 6); // Attach the flat
+  ledcSetup(kFlatPanelPwmChannel, kFlatPanelPwmFrequencyHz, kFlatPanelPwmResolutionBits);
+  ledcAttachPin(PIN_FLAT_FRAME_PANEL, kFlatPanelPwmChannel);
   applyFlatPanelBrightness(0);
   #endif
 
@@ -176,26 +180,26 @@ void initializeAddons() {
   #endif
 }
 
-void SetFlatPanelBrightness(uint8_t brightness) {
+void setFlatPanelBrightness(uint8_t brightness) {
   if (!HAS_FLAT_FRAME_PANEL || !gAddonsInitialized) {
     return;
   }
   applyFlatPanelBrightness(brightness);
 }
 
-void SetShutterPosition(uint16_t position) {
+void setShutterPosition(uint16_t position) {
   if (!HAS_SHUTTER || !gAddonsInitialized) {
     return;
   }
 
   startShutterMove(position);
-  DebugSerial::printFramedValue("SetShutterPosition: target ", clampShutterPosition(position), "");
+  DebugSerial::printFramedValue("setShutterPosition: target ", clampShutterPosition(position), "");
 }
 
 void detachServos() {
   if (HAS_SHUTTER && gAddonsInitialized && gShutterServoAttached) {
     if (gShutterServo.isMoving()) {
-      lastmoveMills = millis();
+      gLastShutterMoveTickMs = millis();
       return;
     }
 
@@ -205,7 +209,7 @@ void detachServos() {
       return;
     }
 
-    if ((millis() - lastmoveMills) >= kShutterDetachDelayMs) { // Only detach if it's been a while since the last move command, to avoid unnecessary detach/attach cycles
+    if ((millis() - gLastShutterMoveTickMs) >= kShutterDetachDelayMs) {
       gShutterServo.detach();
       gShutterServoAttached = false;
       DebugSerial::printFramed("detachServos: shutter servo detached to reduce power and prevent jitter");
@@ -229,7 +233,7 @@ void toggleShutter() {
   }
   static bool isOpen = false;
   isOpen = !isOpen;
-  startShutterMove(static_cast<uint16_t>(isOpen ? 270 : 0));
+  setShutterPosition(static_cast<uint16_t>(isOpen ? kShutterMaxAngle : kShutterMinAngle));
 }
 
 } // namespace Addons

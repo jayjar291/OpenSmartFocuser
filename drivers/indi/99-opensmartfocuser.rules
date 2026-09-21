@@ -1,0 +1,6 @@
+# OpenSmartFocuser USB CDC serial alias
+# Matches firmware USB descriptors:
+#   VID:PID = 1209:F0C1
+#   manufacturer = JayTek
+#   product = OpenSmartFocuser
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="f0c1", ATTRS{manufacturer}=="JayTek", ATTRS{product}=="OpenSmartFocuser", SYMLINK+="OSF", GROUP="dialout", MODE="0660", TAG+="uaccess"

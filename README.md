@@ -54,6 +54,10 @@ INDI driver:
 cd drivers/indi
 cmake -S . -B build
 cmake --build build --parallel
+sudo cmake --install build
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 ```
 
 The INDI driver build expects CMake, a C++ compiler, and the development packages for INDI, Nova, GSL, and ZLIB.
+The install step also deploys a udev rule that creates the stable serial symlink `/dev/OSF` for OpenSmartFocuser devices (USB VID:PID `1209:F0C1`).
