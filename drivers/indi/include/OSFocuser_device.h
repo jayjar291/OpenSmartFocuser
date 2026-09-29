@@ -16,7 +16,7 @@ class FlatDevice;
 class OSFocuser : public INDI::Focuser
 {
     public:
-        // Construct the INDI device and register its serial connection plugin.
+        // Construct the INDI device and configure its serial connection plugin.
         OSFocuser();
 
         // The process owns this instance; default destruction releases members.
@@ -38,8 +38,6 @@ class OSFocuser : public INDI::Focuser
         // One-shot event-loop callback that polls :PF and updates INDI states.
         virtual void TimerHit() override;
     private:
-        // INDI owns and configures this serial connection; protocol uses its fd.
-        Connection::Serial *serialConnection = nullptr;
         // Created during Handshake after the serial plugin opens the port.
         OSFprotocol *protocol = nullptr;
         // Momentary switch vectors for device actions, published while online.

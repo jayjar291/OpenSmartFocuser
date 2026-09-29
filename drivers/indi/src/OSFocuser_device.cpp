@@ -25,13 +25,7 @@ OSFocuser::OSFocuser()
     setDriverInterface(INDI::BaseDevice::FOCUSER_INTERFACE);
     syncDriverInfo();
 
-    // Configure the serial transport; its handshake callback creates the
-    // protocol object and validates the attached focuser before connecting.
-    serialConnection = new Connection::Serial(this);
-    serialConnection->setDefaultBaudRate(Connection::Serial::B_115200);
-    serialConnection->setDefaultPort("/dev/OSF");
-    serialConnection->registerHandshake([&]() {return Handshake();});
-    registerConnection(serialConnection);
+    // Focuser::initProperties creates and registers the serial connection.
 }
 
 OSFocuser::~OSFocuser() = default;
@@ -109,6 +103,9 @@ bool OSFocuser::initProperties()
     // controls; failure here means the device cannot be initialized.
     if (!INDI::Focuser::initProperties())
         return false;
+
+    serialConnection->setDefaultBaudRate(Connection::Serial::B_115200);
+    serialConnection->setDefaultPort("/dev/OSF");
 
     // Each custom action is a one-member, momentary switch in the System tab.
     HomeSP.fill(getDeviceName(), "FOCUS_HOME", "Home", "System", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
