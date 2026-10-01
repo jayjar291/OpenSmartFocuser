@@ -63,6 +63,7 @@ static void motorTask(void* /*param*/) {
     Movement::processEndstopEvent();
     Movement::updateSoftEndstops();
     Movement::updateHoming();
+    Movement::updateStepCalibration();
     Movement::updatePositionPersistence();
     Movement::updateMotorIdleTimeout();
     
@@ -106,6 +107,7 @@ void setup() {
   DebugSerial::printFramedValue("Free heap at startup (bytes) ", ESP.getFreeHeap(), " ");
   
   initMenu();
+  Movement::setMicrosteps(getConfiguredMicrosteps());
 
   ledcSetup(7, 5000, 8); // Set up PWM on channel 7 with 5 kHz frequency and 8-bit resolution for LCD backlight control
   ledcAttachPin(PIN_LCD_BL, 7); // Attach the LCD backlight pin to PWM channel 7
@@ -154,6 +156,7 @@ void loop() {
   menu.loop();
   SerialCommandHandler::poll();
   Movement::setSpeedSetting(getFocusSpeedSetting());
+  updateMicrostepSetting();
   //analogWrite(PIN_LCD_BL, getBrightnessSetting() * 255 / 100);
   ledcWrite(7, getBrightnessSetting() * 255 / 100); // Apply brightness setting to LCD backlight PWM channel
   Addons::detachServos(); // Detach servos if they have been idle for a while to reduce power consumption and prevent jitter

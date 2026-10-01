@@ -11,6 +11,19 @@ enum class MovementStatus {
   Error
 };
 
+enum class CalibrationState {
+  Idle,
+  AwaitingBlockInsert,
+  MovingToBlockContact,
+  AwaitingBlockRemoval,
+  MovingToEndstopContact,
+  AwaitingConfirm,
+  VerifyHoming,
+  VerifyBackoff,
+  VerifyMovingToEndstop,
+  VerifyDone
+};
+
 MovementStatus getMovementStatus();
 
 void initializeDriver();
@@ -52,10 +65,23 @@ bool isUartConnected();
 
 uint16_t getDriverMicrosteps();
 uint16_t getDriverCurrentMa();
+void setMicrosteps(uint16_t microsteps);
 
 void processEndstopEvent();
 void updateSoftEndstops();
 bool checkSoftEndstops(int32_t targetSteps);
 void getLimits(int32_t& minSteps, int32_t& maxSteps);
+
+uint32_t getStepsPerMm();
+bool setStepsPerMm(uint32_t stepsPerMm);
+int32_t getSoftMaxSteps();
+
+void startStepCalibration();
+void stepCalibrationContinue();
+void abortStepCalibration();
+void updateStepCalibration();
+CalibrationState getStepCalibrationState();
+uint32_t getStepCalibrationResultStepsPerMm();
+int32_t getStepCalibrationVerifyDeltaSteps();
 
 } // namespace Movement

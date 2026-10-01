@@ -6,8 +6,9 @@ char kTitleMainMenu[] = "Main Menu";
 char kTitleIdle[] = "Idle";
 char kTitlePresets[] = "Presets";
 char kTitleDeviceInfo[] = "Device Info";
-char kTitleTmcSettings[] = "TMC Settings";
 char kTitleSettings[] = "Settings";
+char kTitleCalibration[] = "Step Calibration";
+char kTitleTmcSettings[] = "TMC Driver";
 
 char kFilterTitle1[] = "Filter 1";
 char kFilterTitle2[] = "Filter 2";
@@ -54,6 +55,22 @@ char kSettingMicrosteps[] = "Microsteps";
 char kSettingSpreadCycle[] = "SpreadCycle";
 char kMainMenuToggleFlatFrame[] = "Toggle Flat Panel";
 char kMainMenuToggleShutter[] = "Toggle Shutter";
+
+char kCalibInsertBlock[] = "Insert 20mm block";
+char kCalibJogToFit[] = "UP/DOWN: Jog clear";
+char kCalibRemoveBlock[] = "Remove block";
+char kCalibPressSelect[] = "SELECT: Continue";
+char kCalibMovingToBlock[] = "Moving to block...";
+char kCalibMovingToEndstop[] = "Moving to endstop...";
+char kCalibHoldToCancel[] = "Hold SELECT: Cancel";
+char kCalibResultPrefix[] = "New steps/mm: ";
+char kCalibSavePromptLine1[] = "SELECT: Save";
+char kCalibSavePromptLine2[] = "Hold SELECT: Cancel";
+char kCalibVerifyHoming[] = "Verifying: homing...";
+char kCalibVerifyBackoff[] = "Verifying: backing off...";
+char kCalibVerifyDone[] = "Verify complete";
+char kCalibVerifyDeltaPrefix[] = "Delta: ";
+char kSettingCalibrateSteps[] = "Calibrate Steps";
 
 const char* speeds[] = {"Fine", "Slow", "Medium", "Fast", "Max"};
 
