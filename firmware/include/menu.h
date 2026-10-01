@@ -17,3 +17,5 @@ void initMenu();
 uint8_t getFocusSpeedSetting();
 uint8_t getBrightnessSetting();
 void adjustFocusSpeedSetting(uint8_t targetSpeed);
+void updateMicrostepSetting();
+uint16_t getConfiguredMicrosteps();

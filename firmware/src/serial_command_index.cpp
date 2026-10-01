@@ -16,6 +16,8 @@ const CommandEntry kCommands[] = {
   {":GS", SerialCommandHandler::handleGetSpeed}, 
   //:GL# get limits max and min in steps, response :GL<minSteps>,<maxSteps>#.
   {":GL", SerialCommandHandler::handleGetLimits},
+  //:GT# get current step per millimeter, response :GT<stepsPerMm>#.
+  {":GT", SerialCommandHandler::handleGetStepsPerMm},
   //:SP<position># override current position in steps, response :ACK#.
   {":SP", SerialCommandHandler::handleSetPosition}, 
   //:VF# get firmware version, response :VF<version>#.
@@ -54,7 +56,11 @@ const CommandEntry kCommands[] = {
   //:MA<positionSteps># move to absolute position in steps, response :ACK#.
   {":MA", SerialCommandHandler::handleMoveAbsolute}, 
   //:MR<relativeSteps># move relative number of steps, response :ACK#.
-  {":MR", SerialCommandHandler::handleMoveRelative}, 
+  {":MR", SerialCommandHandler::handleMoveRelative},
+  //:MM<MillimeterSteps># move to absolute position in millimeters, response :ACK#.
+  {":MM", SerialCommandHandler::handleMoveAbsoluteMillimeters},
+  //:MN<MillimeterSteps># move relative number of millimeters, response :ACK#.
+  {":MN", SerialCommandHandler::handleMoveRelativeMillimeters},
   //:MH# stop motion immediately, response :ACK#.
   {":MH", SerialCommandHandler::handleHalt}, 
   //:MS<speed 0-4># set movement speed, response :ACK#.

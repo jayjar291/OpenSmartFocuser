@@ -6,8 +6,9 @@ extern char kTitleMainMenu[];
 extern char kTitleIdle[];
 extern char kTitlePresets[];
 extern char kTitleDeviceInfo[];
-extern char kTitleTmcSettings[];
 extern char kTitleSettings[];
+extern char kTitleCalibration[];
+extern char kTitleTmcSettings[];
 
 extern char kFilterTitle1[];
 extern char kFilterTitle2[];
@@ -54,6 +55,22 @@ extern char kSettingMicrosteps[];
 extern char kSettingSpreadCycle[];
 extern char kMainMenuToggleFlatFrame[];
 extern char kMainMenuToggleShutter[];
+
+extern char kCalibInsertBlock[];
+extern char kCalibJogToFit[];
+extern char kCalibRemoveBlock[];
+extern char kCalibPressSelect[];
+extern char kCalibMovingToBlock[];
+extern char kCalibMovingToEndstop[];
+extern char kCalibHoldToCancel[];
+extern char kCalibResultPrefix[];
+extern char kCalibSavePromptLine1[];
+extern char kCalibSavePromptLine2[];
+extern char kCalibVerifyHoming[];
+extern char kCalibVerifyBackoff[];
+extern char kCalibVerifyDone[];
+extern char kCalibVerifyDeltaPrefix[];
+extern char kSettingCalibrateSteps[];
 
 extern const char* speeds[];
 

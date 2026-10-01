@@ -205,6 +205,14 @@ void handleGetLimits(const char* parameters, size_t parametersLength) {
   gSerial->print(maxSteps);
   gSerial->println("#");
 }
+//:GT# get current step per millimeter, response :GT<stepsPerMm>#.
+void handleGetStepsPerMm(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->print(":GT");
+  gSerial->print(Movement::getStepsPerMm());
+  gSerial->println("#");
+}
 
 //:SP<positionSteps># override current position in steps, response :ACK#.
 void handleSetPosition(const char* parameters, size_t parametersLength) {
@@ -531,6 +539,49 @@ void handleMoveRelative(const char* parameters, size_t parametersLength) {
     return;
   }
 
+  if (!Movement::checkSoftEndstops(Movement::getCurrentPositionSteps() + relativeSteps)) {
+    gSerial->println(kResponsePositionExceedLimit);
+    return;
+  }
+
+  Movement::moveRelative(relativeSteps);
+  gSerial->println(kResponseAck);
+}
+//:MM<MillimeterSteps># move to absolute position in millimeters, response :ACK#.
+void handleMoveAbsoluteMillimeters(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  float positionMillimeters = 0;
+  if (!readFloatArg(args, 0, positionMillimeters)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  Movement::moveToPositionMm(positionMillimeters);
+  gSerial->println(kResponseAck);
+}
+
+//:MN<MillimeterSteps># move relative number of millimeters, response :ACK#.
+void handleMoveRelativeMillimeters(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  float relativeMillimeters = 0;
+  if (!readFloatArg(args, 0, relativeMillimeters)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  int32_t relativeSteps = static_cast<int32_t>(relativeMillimeters * Movement::getStepsPerMm());
   if (!Movement::checkSoftEndstops(Movement::getCurrentPositionSteps() + relativeSteps)) {
     gSerial->println(kResponsePositionExceedLimit);
     return;

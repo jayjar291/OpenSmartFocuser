@@ -14,13 +14,14 @@ MenuScreen mainMenu(MenuStrings::kTitleMainMenu);
 CustomScreens::IdleScreen idleScreen(MenuStrings::kTitleIdle);
 CustomScreens::PresetScreen presetScreen(MenuStrings::kPresetActions);
 CustomScreens::DeviceInfoScreen deviceInfoScreen(MenuStrings::kTitleDeviceInfo);
+CustomScreens::CalibrationScreen calibrationScreen(MenuStrings::kTitleCalibration);
 MenuScreen PresetsMenu(MenuStrings::kTitlePresets);
 MenuScreen PresetActionsMenu(MenuStrings::kPresetActions);
 MenuScreen AddPresetMenu(MenuStrings::kPresetAdd);
 MenuScreen TestPOS(MenuStrings::kTestPositions);
 
-SettingsScreen TMCSettings(MenuStrings::kTitleTmcSettings);
 SettingsScreen settingsScreen(MenuStrings::kTitleSettings);
+SettingsScreen TMCSettings(MenuStrings::kTitleTmcSettings);
 
 long savedPresetPositionSteps = 0;
 
@@ -32,6 +33,21 @@ constexpr size_t kConfiguredPresetNameCount = sizeof(kConfiguredPresetNames) / s
 static_assert(kConfiguredPresetNameCount > 0, "PRESET_NAME_OPTIONS must contain at least one preset name.");
 static_assert(kConfiguredPresetNameCount <= preset::kMaxPresets,
               "PRESET_NAME_OPTIONS must not exceed preset::kMaxPresets.");
+
+const char* kMicrostepOptions[] = {"1", "2", "4", "8", "16", "32", "64", "128", "256"};
+constexpr uint16_t kMicrostepValues[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
+constexpr uint8_t kMicrostepOptionCount = sizeof(kMicrostepValues) / sizeof(kMicrostepValues[0]);
+
+uint8_t microstepIndexForValue(uint16_t value) {
+  for (uint8_t i = 0; i < kMicrostepOptionCount; ++i) {
+    if (kMicrostepValues[i] == value) {
+      return i;
+    }
+  }
+  return 4; // Falls back to 16 microsteps if the requested value is not an option.
+}
+
+uint8_t gLastAppliedMicrostepIndex = 0;
 
 char gPresetLabelBuffer[preset::kMaxPresets][preset::kMaxNameLen + 8] = {};
 char gPresetActionsTitle[preset::kMaxNameLen + 8] = "Preset";
@@ -251,6 +267,18 @@ void startHomingAction() {
     Movement::startHoming();
 }
 
+void checkMicrostepSettingChanged() {
+  const uint8_t currentIndex = TMCSettings.getSettingValue(MenuStrings::kSettingMicrosteps);
+  if (currentIndex == gLastAppliedMicrostepIndex) {
+    return;
+  }
+  gLastAppliedMicrostepIndex = currentIndex;
+  Movement::setMicrosteps(kMicrostepValues[currentIndex]);
+  // Changing microsteps invalidates the measured steps/mm; force recalibration.
+  Movement::startStepCalibration();
+  screenManager.pushScreen(&calibrationScreen);
+}
+
 #if HAS_FLAT_FRAME_PANEL
 void toggleFlatFrameAction() {
   Addons::toggleFlatPanel();
@@ -269,6 +297,14 @@ void toggleShutterAction() {
 void notifyPresetMenuDataChanged() {
   refreshPresetsMenu();
   refreshAddPresetMenu();
+}
+
+void updateMicrostepSetting() {
+  checkMicrostepSettingChanged();
+}
+
+uint16_t getConfiguredMicrosteps() {
+  return kMicrostepValues[gLastAppliedMicrostepIndex];
 }
 
 long loadPresetPositionById(uint8_t id) {
@@ -295,10 +331,11 @@ void initMenu() {
   settingsScreen.addBooleanSetting(MenuStrings::kSettingBluetooth, true);
   settingsScreen.addRangeSetting(MenuStrings::kSettingBrightness, 0, 100, DEFAULT_BRIGHTNESS, MenuStrings::kPercentUnit);
   settingsScreen.addSubscreenSetting(MenuStrings::kSettingTmcDriver, &TMCSettings);
+  settingsScreen.addSubscreenSetting(MenuStrings::kSettingCalibrateSteps, &calibrationScreen);
 
-  DebugSerial::printFramed("initMenu: tmc settings");
-  TMCSettings.addRangeSetting(MenuStrings::kSettingMicrosteps, 1, 255, TMC_MICROSTEPS, MenuStrings::kMicrostepUnit);
-  TMCSettings.addBooleanSetting(MenuStrings::kSettingSpreadCycle, TMC_SPREAD_CYCLE);
+  TMCSettings.addOptionSetting(MenuStrings::kSettingMicrosteps, kMicrostepOptions, kMicrostepOptionCount,
+                                microstepIndexForValue(TMC_MICROSTEPS));
+  gLastAppliedMicrostepIndex = TMCSettings.getSettingValue(MenuStrings::kSettingMicrosteps);
 
   DebugSerial::printFramed("initMenu: test menu");
   TestPOS.addItem(MenuStrings::kPos0mm, nullptr, []() { Movement::moveToPositionMm(0); });
