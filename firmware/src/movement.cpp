@@ -708,6 +708,7 @@ void abortStepCalibration() {
     focuserStepper->setSpeedInHz(speedHz);
   }
   calibInProgress = false;
+  jogActive = false;
   calibState = CalibrationState::Idle;
   noInterrupts();
   endstopTriggeredDuringCalib = false;

@@ -139,6 +139,26 @@ void handleHeartbeat(const char* parameters, size_t parametersLength) {
   gSerial->println(":PP#");
 }
 
+//:PS# Poll focuser status, response :PS<status>,<position>#, if add-ons are present, additional fields may be included [<dustCapPosition>,<LightboxBrightness>].
+void handlePollStatus(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->print(":PS");
+  gSerial->print(Movement::getMovementStatus() == Movement::MovementStatus::Idle ? "Idle" : "Moving");
+  gSerial->print(",");
+  gSerial->print(Movement::getCurrentPositionSteps());
+  // Add additional fields for add-ons here if present.
+  //if (Addons::hasAddon(Addons::AddOnType::DustCap)) {
+  //  gSerial->print(",");
+  //  gSerial->print(Addons::getDustCapPosition());
+  //}
+  //if (Addons::hasAddon(Addons::AddOnType::Lightbox)) {
+  //  gSerial->print(",");
+  //  gSerial->print(Addons::getLightboxBrightness());
+  //}
+  gSerial->println("#");
+}
+
 //:FV# get firmware version, response :FV<versionString>#.
 void handleGetFirmwareVersion(const char* parameters, size_t parametersLength) {
   (void)parameters;
