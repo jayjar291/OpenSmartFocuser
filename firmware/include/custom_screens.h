@@ -586,13 +586,21 @@ class CalibrationScreen : public Screen {
   }
 
   void draw() override {
-    int screenWidth = canvas.width();
-    int screenHeight = canvas.height();
+    static constexpr int kBottomBarHeight = 20;
+    static constexpr int kRightBarWidth = 22;
+    static constexpr int kTextPaddingX = 4;
+
+    const int screenWidth = canvas.width();
+    const int screenHeight = canvas.height();
+    const int bottomBarY = screenHeight - kBottomBarHeight;
+    const int rightBarX = screenWidth - kRightBarWidth;
+    const int panelWidth = rightBarX;
+    const int panelHeight = bottomBarY;
 
     canvas.setTextFont(1);
     canvas.setTextSize(1);
     canvas.fillScreen(IDLE_COLOR_BG);
-    canvas.drawRect(0, 0, screenWidth, screenHeight, IDLE_COLOR_SPACER);
+    canvas.drawRect(0, 0, panelWidth, panelHeight, IDLE_COLOR_SPACER);
     canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
     canvas.drawString(title_, 8, 8);
 
@@ -647,16 +655,58 @@ class CalibrationScreen : public Screen {
       default:
         break;
     }
+
+    // Right-side position bar.
+    canvas.fillRect(rightBarX, 0, kRightBarWidth, panelHeight, IDLE_COLOR_RIGHT_BAR);
+    canvas.drawRect(rightBarX, 0, kRightBarWidth, panelHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
+
+    // Bottom status bar across full width.
+    canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
+
+    int32_t pos = Movement::getCurrentPositionSteps();
+    const int32_t softMaxSteps = Movement::getSoftMaxSteps();
+    if (pos < FOCUSER_SOFT_MIN_STEPS) {
+      pos = FOCUSER_SOFT_MIN_STEPS;
+    } else if (pos > softMaxSteps) {
+      pos = softMaxSteps;
+    }
+
+    const int barTop = 1;
+    const int barBottom = bottomBarY - 2;
+    const int barHeight = barBottom - barTop;
+    const int32_t range = softMaxSteps - FOCUSER_SOFT_MIN_STEPS;
+
+    int markerY = barBottom;
+    if (range > 0) {
+      markerY = barBottom - static_cast<int>(
+          (static_cast<int64_t>(pos - FOCUSER_SOFT_MIN_STEPS) * barHeight) / range);
+    }
+
+    const int indicatorY = constrain(markerY, barTop + 2, barBottom - 2);
+    canvas.fillRect(rightBarX + 4, indicatorY, kRightBarWidth - 8, 2, IDLE_COLOR_TEXT);
+
+    canvas.setTextColor(kIdleStatusIconColor, IDLE_COLOR_BOTTOM_BAR);
+    canvas.loadFont(lucide28);
+    canvas.drawString(kIconTelescope, kTextPaddingX, bottomBarY + 3);
+    canvas.unloadFont();
+    canvas.setTextFont(1);
+    canvas.setTextSize(1);
+    canvas.drawFastVLine(28, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BOTTOM_BAR);
+    canvas.drawString(statusText(state), 34, bottomBarY + 4, 1);
+
+    char posMmText[12];
+    const float posMm = static_cast<float>(pos) / static_cast<float>(Movement::getStepsPerMm());
+    snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
+    canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
+    canvas.drawFastVLine(screenWidth - canvas.textWidth(posMmText, 1) - 8, bottomBarY + 3,
+                         kBottomBarHeight - 6, IDLE_COLOR_SPACER);
   }
 
   void handleInput() override {
     if (Movement::getStepCalibrationState() == Movement::CalibrationState::Idle) {
       Movement::startStepCalibration();
     }
-
-    static bool selectClicked = false;
-    static bool longPressHandled = false;
-    static unsigned long selectPressTime = 0;
 
     if (digitalRead(BUTTON_SELECT_PIN) == buttonVoltage) {
       if (!selectClicked && !longPressHandled) {
@@ -692,6 +742,32 @@ class CalibrationScreen : public Screen {
   }
 
  private:
+  static const char* statusText(Movement::CalibrationState state) {
+    switch (state) {
+      case Movement::CalibrationState::AwaitingBlockInsert:
+        return "Jog / Insert";
+      case Movement::CalibrationState::MovingToBlockContact:
+        return "Seek block";
+      case Movement::CalibrationState::AwaitingBlockRemoval:
+        return "Remove block";
+      case Movement::CalibrationState::MovingToEndstopContact:
+        return "Seek endstop";
+      case Movement::CalibrationState::AwaitingConfirm:
+        return "Confirm";
+      case Movement::CalibrationState::VerifyHoming:
+        return "Verify: home";
+      case Movement::CalibrationState::VerifyBackoff:
+        return "Verify: back off";
+      case Movement::CalibrationState::VerifyMovingToEndstop:
+        return "Verify: seek";
+      case Movement::CalibrationState::VerifyDone:
+        return "Verified";
+      case Movement::CalibrationState::Idle:
+      default:
+        return "Waiting";
+    }
+  }
+
   bool canJogInCurrentState() const {
     const Movement::CalibrationState state = Movement::getStepCalibrationState();
     return state == Movement::CalibrationState::AwaitingBlockInsert ||
@@ -724,12 +800,18 @@ class CalibrationScreen : public Screen {
 
   void onSelectLongPress() {
     Movement::abortStepCalibration();
+    // Clear press tracking so the release after leaving doesn't fire a stale short press on re-entry.
+    selectClicked = false;
+    longPressHandled = false;
     if (screenManager.canGoBack()) {
       screenManager.popScreen();
     }
     prevSelectState = buttonVoltage;
   }
 
+  bool selectClicked = false;
+  bool longPressHandled = false;
+  unsigned long selectPressTime = 0;
   const char *title_;
 };
 

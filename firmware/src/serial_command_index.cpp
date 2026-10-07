@@ -24,6 +24,8 @@ const CommandEntry kCommands[] = {
   {":VF", SerialCommandHandler::handleGetFirmwareVersion}, // Not implemented yet.
   //:PP# heartbeat command, response :PP#.
   {":PP", SerialCommandHandler::handleHeartbeat}, 
+  //:PS# Poll focuser status, response :PS<status>,<position>#, if add-ons are present, additional fields may be included [<dustCapPosition>,<LightboxBrightness>].
+  {":PS", SerialCommandHandler::handlePollStatus},
   //--------------------------------------------------------------homing commands below------------------------------------------------------
   //:HM# start homing sequence, response :ACK#
   {":HM", SerialCommandHandler::handleHome},

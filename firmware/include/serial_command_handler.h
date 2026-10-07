@@ -29,6 +29,7 @@ void handleGetFirmwareVersion(const char* parameters, size_t parametersLength);
 void handleGetLimits(const char* parameters, size_t parametersLength);
 void handleGetStepsPerMm(const char* parameters, size_t parametersLength);
 void handleHeartbeat(const char* parameters, size_t parametersLength);
+void handlePollStatus(const char* parameters, size_t parametersLength);
 void handleMoveAbsolute(const char* parameters, size_t parametersLength);
 void handleMoveRelative(const char* parameters, size_t parametersLength);
 void handleMoveAbsoluteMillimeters(const char* parameters, size_t parametersLength);

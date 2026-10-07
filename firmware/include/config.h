@@ -10,7 +10,6 @@
 
 /*
  * Generic motion and UART timing configuration for the focuser driver stack.
- * System now runs in full-step mode (1 microstep) for all operations.
  */
 #define TMC_UART_BAUDRATE 115200
 #define TMC_DRIVER_ADDRESS 0b00
@@ -39,13 +38,12 @@
  */
 #define TMC_RMS_CURRENT 650
 #define MOTOR_IDLE_TIMEOUT_MS 30000
-#define TMC_MICROSTEPS 16
+#define TMC_MICROSTEPS 4
 #define TMC_SPREAD_CYCLE true
 #define TMC_INTERPOLATE true
 
 /*
  * Focuser travel calibration.
- * Measured: 184000 full steps (HOMING_MICROSTEPS=1) = 4.74 mm.
  * Steps/mm is persisted at runtime (see Movement::getStepsPerMm) and can be
  * re-measured via the step calibration wizard; this is only the initial value.
  */
@@ -54,7 +52,7 @@
 /*
  * Thickness of the calibration block used by the step calibration wizard.
  */
-#define FOCUSER_CALIBRATION_BLOCK_MM 20
+#define FOCUSER_CALIBRATION_BLOCK_MM 15
 
 /*
  * Distance the draw tube backs off before re-approaching the endstop during
