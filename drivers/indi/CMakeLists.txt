@@ -22,7 +22,10 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${INDI_INCLUDE_DIR})
 
-add_executable(indi_opensmartfocuser src/OSFocuser_device.cpp)
+add_executable(indi_opensmartfocuser
+  src/OSFocuser_device.cpp
+  src/protocol.cpp
+)
 
 target_link_libraries(indi_opensmartfocuser ${INDI_LIBRARIES})
 

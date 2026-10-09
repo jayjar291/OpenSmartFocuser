@@ -43,6 +43,11 @@ using ResponseData = std::variant<
     std::vector<std::string>// Add-on list (:AQ)
 >;
 
+struct CommandResponse {
+    ResponseData response;
+    std::vector<std::string> debugFrames;
+};
+
 } // namespace OSF
 
 class OSFprotocol {
@@ -50,11 +55,12 @@ public:
     explicit OSFprotocol(int fd);
 
     // Send command string and receive typed response
-    OSF::ResponseData sendCommand(const std::string &cmd);
+    OSF::CommandResponse sendCommand(const std::string &cmd);
 
 private:
     int m_fd;
     // Parser helpers
-    OSF::ResponseData parseResponse(const std::string &rawResponse);
-    OSF::StepLimits parseLimits(const std::string &payload);
+    //OSF::ResponseData parseResponse(const std::string &rawResponse);
+    //OSF::StepLimits parseLimits(const std::string &payload);
+    static bool splitResponseFrames(const std::string &rawResponse, std::string &commandFrame, std::vector<std::string> &debugFrames);
 };

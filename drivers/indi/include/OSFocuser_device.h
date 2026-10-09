@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include "indifocuser.h"
+#include "protocol.h"
 
 class OSFocuser : public INDI::Focuser
 {
@@ -19,6 +20,7 @@ class OSFocuser : public INDI::Focuser
 
     private:
         Connection::Serial *serialConnection = nullptr;
+        OSFprotocol *protocol = nullptr;
 
     protected:
 
