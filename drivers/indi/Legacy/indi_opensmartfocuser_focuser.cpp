@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -38,9 +39,10 @@ constexpr uint32_t SHUTTER_OFF = 0;
 constexpr uint32_t SHUTTER_ON = 270;
 constexpr uint32_t FLAT_PANEL_OFF = 0;
 constexpr uint32_t FLAT_PANEL_ON = 255;
-constexpr int DEFAULT_STARMAP_REFRESH_MS = 100;
+constexpr int DEFAULT_STARMAP_REFRESH_MS = 5000;
 constexpr int MIN_STARMAP_REFRESH_MS = 0;
 constexpr int MAX_STARMAP_REFRESH_MS = 600000;
+constexpr int FOCUSER_STATUS_REFRESH_MS = 1000;
 
 // Parse a full unsigned integer payload and reject partial/invalid conversions.
 bool parsePositiveInteger(const std::string &text, uint32_t &value)
@@ -51,7 +53,8 @@ bool parsePositiveInteger(const std::string &text, uint32_t &value)
     char *endptr = nullptr;
     errno = 0;
     const unsigned long converted = std::strtoul(text.c_str(), &endptr, 10);
-    if (errno != 0 || endptr == text.c_str() || *endptr != '\0')
+    if (errno != 0 || endptr == text.c_str() || *endptr != '\0' ||
+        converted > static_cast<unsigned long>(std::numeric_limits<uint32_t>::max()))
         return false;
 
     value = static_cast<uint32_t>(converted);
@@ -171,6 +174,7 @@ std::string escapeFrameForLog(const std::string &text)
 OpenSmartFocuser::OpenSmartFocuser() : INDI::DustCapInterface(this), INDI::LightBoxInterface(this)
 {
     starMapRefreshTimer.callOnTimeout([this]() { syncStarMapTarget(); });
+    focuserStatusTimer.callOnTimeout([this]() { updateFocuserStatus(); });
     FI::SetCapability(FOCUSER_CAN_ABS_MOVE | FOCUSER_CAN_REL_MOVE | FOCUSER_CAN_ABORT);
     setSupportedConnections(CONNECTION_NONE);
     setVersion(CDRIVER_VERSION_MAJOR, CDRIVER_VERSION_MINOR);
@@ -184,6 +188,7 @@ const char *OpenSmartFocuser::getDefaultName()
 void OpenSmartFocuser::ISGetProperties(const char *dev)
 {
     INDI::Focuser::ISGetProperties(dev);
+    //INDI::DustCapInterface::ISGetProperties(dev);
     INDI::LightBoxInterface::ISGetProperties(dev);
 }
 
@@ -216,6 +221,7 @@ bool OpenSmartFocuser::updateProperties()
     {
         refreshTargetSnoopSubscriptions();
         restartStarMapRefreshTimer();
+        restartFocuserStatusTimer();
 
         const char *selectedName = TargetSourceTP[0].getText();
         if (selectedName != nullptr && trimCopy(selectedName).empty() == false && !snoopedTargetValid)
@@ -227,6 +233,7 @@ bool OpenSmartFocuser::updateProperties()
     else
     {
         starMapRefreshTimer.stop();
+        focuserStatusTimer.stop();
         TargetSourceTP.setState(IPS_IDLE);
         TargetSourceTP.apply();
     }
@@ -306,6 +313,7 @@ bool OpenSmartFocuser::Connect()
 bool OpenSmartFocuser::Disconnect()
 {
     starMapRefreshTimer.stop();
+    focuserStatusTimer.stop();
     closeSerialPort();
     hasShutterAddon = false;
     hasFlatPanelAddon = false;
@@ -325,11 +333,7 @@ IPState OpenSmartFocuser::MoveAbsFocuser(uint32_t targetTicks)
     if (!commandAck(":MA", std::to_string(targetTicks)))
         return IPS_ALERT;
 
-    cachedPosition = targetTicks;
-    FocusAbsPosNP[0].setValue(cachedPosition);
-    FocusAbsPosNP.setState(IPS_OK);
-    FocusAbsPosNP.apply();
-    return IPS_OK;
+    return IPS_BUSY;
 }
 
 // Relative move handler from INDI clients.
@@ -340,14 +344,7 @@ IPState OpenSmartFocuser::MoveRelFocuser(FocusDirection dir, uint32_t ticks)
     if (!commandAck(":MR", std::to_string(signedDelta)))
         return IPS_ALERT;
 
-    uint32_t position = cachedPosition;
-    if (queryPosition(position))
-        cachedPosition = position;
-
-    FocusAbsPosNP[0].setValue(cachedPosition);
-    FocusAbsPosNP.setState(IPS_OK);
-    FocusAbsPosNP.apply();
-    return IPS_OK;
+    return IPS_BUSY;
 }
 
 // Abort current motion via :MH#.
@@ -492,6 +489,55 @@ void OpenSmartFocuser::restartStarMapRefreshTimer()
 
     starMapRefreshTimer.setInterval(refreshMs);
     starMapRefreshTimer.start();
+}
+
+void OpenSmartFocuser::restartFocuserStatusTimer()
+{
+    if (!isConnected() || serialFD < 0)
+    {
+        focuserStatusTimer.stop();
+        return;
+    }
+
+    focuserStatusTimer.setInterval(FOCUSER_STATUS_REFRESH_MS);
+    focuserStatusTimer.start();
+}
+
+void OpenSmartFocuser::updateFocuserStatus()
+{
+    if (!isConnected() || serialFD < 0)
+        return;
+
+    std::string status;
+    uint32_t position = cachedPosition;
+    if (!queryFocuserStatus(status, position))
+    {
+        FocusAbsPosNP.setState(IPS_ALERT);
+        FocusAbsPosNP.apply();
+        if (FocusRelPosNP.getState() == IPS_BUSY)
+        {
+            FocusRelPosNP.setState(IPS_ALERT);
+            FocusRelPosNP.apply();
+        }
+        return;
+    }
+
+    IPState state = IPS_ALERT;
+    if (status == "Idle")
+        state = IPS_OK;
+    else if (status == "Moving" || status == "Homing")
+        state = IPS_BUSY;
+
+    cachedPosition = position;
+    FocusAbsPosNP[0].setValue(cachedPosition);
+    FocusAbsPosNP.setState(state);
+    FocusAbsPosNP.apply();
+
+    if (FocusRelPosNP.getState() == IPS_BUSY)
+    {
+        FocusRelPosNP.setState(state);
+        FocusRelPosNP.apply();
+    }
 }
 
 bool OpenSmartFocuser::snoopTargetFromDevice(XMLEle *root)
@@ -1305,6 +1351,33 @@ bool OpenSmartFocuser::queryPosition(uint32_t &position)
         return false;
 
     position = parsed;
+    return true;
+}
+
+bool OpenSmartFocuser::queryFocuserStatus(std::string &status, uint32_t &position)
+{
+    std::string response;
+    if (!sendCommand(":PF", "", response))
+        return false;
+
+    if (!startsWith(response, ":PF") || response.size() < 10 || response.back() != '#')
+        return false;
+
+    const std::string payload = response.substr(3, response.size() - 4);
+    const size_t comma = payload.find(',');
+    if (comma == std::string::npos)
+        return false;
+
+    const std::string parsedStatus = payload.substr(0, comma);
+    if (parsedStatus != "Idle" && parsedStatus != "Moving" && parsedStatus != "Homing" && parsedStatus != "Error")
+        return false;
+
+    uint32_t parsedPosition = 0;
+    if (!parsePositiveInteger(payload.substr(comma + 1), parsedPosition))
+        return false;
+
+    status = parsedStatus;
+    position = parsedPosition;
     return true;
 }
 

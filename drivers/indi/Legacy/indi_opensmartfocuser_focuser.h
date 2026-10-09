@@ -71,6 +71,7 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		bool sendCommand(const std::string &token, const std::string &payload, std::string &response);
 		bool commandAck(const std::string &token, const std::string &payload);
 		bool queryPosition(uint32_t &position);
+		bool queryFocuserStatus(std::string &status, uint32_t &position);
 		bool querySpeedIndex(uint32_t &speedIndex);
 		bool queryLimits(int32_t &minSteps, int32_t &maxSteps);
 		bool queryAddons(bool &hasShutter, bool &hasFlatPanel);
@@ -80,6 +81,8 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		// Snooped telescope target cache and refresh loop.
 		bool syncStarMapTarget();
 		void restartStarMapRefreshTimer();
+		void restartFocuserStatusTimer();
+		void updateFocuserStatus();
 		void refreshTargetSnoopSubscriptions();
 		void refreshDiscoveredTargetDevices();
 		void reloadDiscoveredTargetDevices();
@@ -143,4 +146,5 @@ class OpenSmartFocuser : public INDI::Focuser, public INDI::DustCapInterface, pu
 		std::string snoopedTargetName;
 		std::vector<std::string> discoveredTargetDevices;
 		INDI::Timer starMapRefreshTimer {};
+		INDI::Timer focuserStatusTimer {};
 };
