@@ -7,9 +7,7 @@ namespace Addons {
 enum class AddonType : uint8_t {
     None = 0,
     Shutter,
-    FlatPanel,
-    AutoCollimation,
-    OTASensors,
+    FlatPanel
 };
 
 bool isEnabled();

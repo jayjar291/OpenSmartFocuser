@@ -8,7 +8,8 @@ OS-independent GUI command parser / sender for the OpenSmartFocuser firmware.
 Frame format (see include/serial_command_index.h / src/serial_command_index.cpp):
     :<token><payload>#
 Payload fields are comma-separated, ints/floats/strings auto-typed by the
-firmware PayloadParser.
+firmware PayloadParser. Each send contains one command frame, and each command
+returns one response frame; multi-item results are separated within that frame.
 
 Requires: pyserial  (pip install pyserial)
 Runs on Windows, macOS, Linux with the stdlib tkinter GUI.
@@ -65,7 +66,7 @@ COMMANDS = [
     CommandSpec("Get Position", ":GP", [], ":GP<steps>#",
                 "Get current position in steps.", "Status"),
     CommandSpec("Get Movement State", ":GM", [], ":GM<state>#",
-                "Get movement state: IDLE, MOVING or HOMING.", "Status"),
+                "Get movement state: Idle, Moving, Homing or Error.", "Status"),
     CommandSpec("Get Speed", ":GS", [], ":GS<speed>#",
                 "Get current speed setting (0-4).", "Status"),
     CommandSpec("Get Limits", ":GL", [], ":GL<minSteps>,<maxSteps>#",
@@ -76,9 +77,11 @@ COMMANDS = [
                 [ArgSpec("position", "int", "steps")], ":ACK#",
                 "Override current position (steps).", "Status"),
     CommandSpec("Get Firmware Version", ":VF", [], ":VF<version>#",
-                "Get firmware version (not implemented yet).", "Status"),
+                "Get the firmware version.", "Status"),
     CommandSpec("Heartbeat", ":PP", [], ":PP#",
                 "Heartbeat / ping.", "Status"),
+    CommandSpec("Poll Status", ":PF", [], ":PF<state>,<steps>#",
+                "Get movement state and current position.", "Status"),
 
     # ---- homing ----
     CommandSpec("Home", ":HM", [], ":ACK#",
@@ -88,10 +91,10 @@ COMMANDS = [
     CommandSpec("Get Target", ":TG", [], ":TG<RA>,<DEC>,<name>#",
                 "Get DSO target RA, DEC and name.", "Target"),
     CommandSpec("Set Target", ":TS",
-                [ArgSpec("ra", "str", "e.g. 12h30m"),
-                 ArgSpec("dec", "str", "e.g. +41d16m"),
+                [ArgSpec("ra", "float", "degrees"),
+                 ArgSpec("dec", "float", "degrees"),
                  ArgSpec("name", "str", "target name")], ":ACK#",
-                "Set DSO target RA, DEC, name.", "Target"),
+                "Set DSO target RA and DEC in decimal degrees, plus name.", "Target"),
     CommandSpec("Clear Target", ":TC", [], ":ACK#",
                 "Clear the DSO target.", "Target"),
 
@@ -101,15 +104,15 @@ COMMANDS = [
                 "Goto preset by id.", "Presets"),
     CommandSpec("Get Preset", ":PR",
                 [ArgSpec("presetId", "int", "preset id")],
-                ":PR<presetId>,<name>,<steps>#",
+                ":PR<presetId>,<steps>,<name>#",
                 "Get preset by id.", "Presets"),
     CommandSpec("List Presets", ":PL", [],
-                ":PL<presetId>,<name>,<steps># ... :PL!#",
-                "List all presets (terminates with :PL!#).", "Presets"),
+                ":PL<presetId>,<steps>,<name>[;...]#",
+                "List all presets in one frame; entries are semicolon-separated.", "Presets"),
     CommandSpec("Add Preset", ":PA",
                 [ArgSpec("steps", "int", "-1 = current position"),
                  ArgSpec("presetName", "str", "name")],
-                ":PA<presetId>,<presetName>#",
+                ":PA<presetId>,<presetName>,<steps>#",
                 "Add preset. steps=-1 uses current position.", "Presets"),
     CommandSpec("Set Preset", ":PS",
                 [ArgSpec("presetId", "int", "preset id"),
@@ -156,14 +159,14 @@ COMMANDS = [
                 "Enable motor.", "System"),
 
     # ---- addons ----
-    CommandSpec("Query Add-ons", ":AQ", [], ":AQ<Type># ... :AQ!#",
-                "Query add-ons (terminates with :AQ!#).", "Add-ons"),
+    CommandSpec("Query Add-ons", ":AQ", [], ":AQ<type>[,<type>...]#",
+                "Query add-ons; all detected types are returned in one frame.", "Add-ons"),
     CommandSpec("Set Flat Panel Brightness", ":FP",
                 [ArgSpec("brightness", "int", "0-255")], ":ACK#",
                 "Set flat panel brightness (0=off, 255=max).", "Add-ons"),
     CommandSpec("Set Shutter Position", ":SV",
-                [ArgSpec("position", "int", "0-180")], ":ACK#",
-                "Set shutter position (0=closed, 180=open).", "Add-ons"),
+                [ArgSpec("position", "int", "0-270")], ":ACK#",
+                "Set shutter position (0=closed, 270=open).", "Add-ons"),
 ]
 
 COMMAND_BY_NAME = {c.name: c for c in COMMANDS}
@@ -501,6 +504,11 @@ class SerialConsoleApp(tk.Tk):
         self.raw_var.set("")
 
     def _transmit(self, frame):
+        frame = frame.strip()
+        if not frame.startswith(":") or not frame.endswith("#") or frame.count("#") != 1:
+            messagebox.showwarning(
+                "Invalid frame", "Send exactly one :command...# frame at a time.")
+            return
         try:
             self.worker.send(frame)
         except Exception as exc:
