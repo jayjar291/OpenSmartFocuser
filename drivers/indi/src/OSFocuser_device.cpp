@@ -59,8 +59,10 @@ void OSFocuser::TimerHit()
     if (!isConnected())
         return;
     LOG_DEBUG("Polling focuser status");
-    std::string status;
-    // Send command to get focuser status
+    auto response = protocol->sendCommand(":PF#");
+    if (auto status = std::get_if<OSF::FocuserStatus>(&response.response)) {
+        LOGF_INFO("Focuser status %s position %d", status->status.c_str(), status->position);
+    } // Example status command
     SetTimer(getCurrentPollingPeriod());
 }
 
@@ -78,26 +80,24 @@ bool OSFocuser::Handshake()
         LOG_ERROR("Protocol not initialized");
         return false;
     }
-    // Example handshake command
+
+    // handshake command
     auto response = protocol->sendCommand(":PP#");
-    if (const auto *commandFrame = std::get_if<std::string>(&response.response))
-    {
-        LOGF_DEBUG("Command frame: %s", commandFrame->c_str());
-        LOGF_INFO("Command frame: %s", commandFrame->c_str());
-    }
-    else
-    {
-        LOG_ERROR("Failed to get command frame");
-    }
+    // Log debug frames for troubleshooting
     for (const auto &frame : response.debugFrames)
     {
         LOGF_DEBUG("Debug frame: %s", frame.c_str());
-        LOGF_INFO("Debug frame: %s", frame.c_str());
     }
-        
 
-    //LOG_ERROR("Handshake failed");
-    return true;
+    // Check if the response indicates success
+    if (std::get_if<bool>(&response.response))
+    {
+        LOG_INFO("Handshake successful");
+        return true;
+    }
+
+    LOG_ERROR("Handshake failed");
+    return false;
 }
 
 IPState OSFocuser::MoveFocuser(FocusDirection dir, int speed, uint16_t duration)

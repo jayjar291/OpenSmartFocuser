@@ -1,10 +1,30 @@
 #include "protocol.h"
 #include <connectionplugins/connectionserial.h>
 #include <cerrno>
+#include <charconv>
+#include <stdexcept>
 #include <unistd.h>
 
 using namespace OSF;
 OSFprotocol::OSFprotocol(int fd) : m_fd(fd) {}
+
+OSF::FocuserStatus OSFprotocol::parseFocuserStatus(const std::string &commandFrame) const
+{
+    const size_t separator = commandFrame.find(',');
+    if (separator == std::string::npos || separator == 0) {
+        throw std::invalid_argument("Invalid focuser status frame");
+    }
+
+    const char *positionBegin = commandFrame.data() + separator + 1;
+    const char *positionEnd = commandFrame.data() + commandFrame.size();
+    int32_t position;
+    const auto result = std::from_chars(positionBegin, positionEnd, position);
+    if (result.ec != std::errc{} || result.ptr != positionEnd) {
+        throw std::invalid_argument("Invalid focuser position");
+    }
+
+    return {commandFrame.substr(0, separator), position};
+}
 
 OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
 {
@@ -45,7 +65,35 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
         splitResponseFrames(rawResponse, commandFrame, commandResponse.debugFrames);
     }
 
-    commandResponse.response = commandFrame;
+    // Validate command frame format
+    if (commandFrame.size() < 2 || commandFrame.front() != ':' || commandFrame.back() != '#') {
+        return commandResponse;
+    }
+    
+    // Strip leading ':' and trailing '#' from the command frame
+    commandFrame = commandFrame.substr(1, commandFrame.size() - 2);
+
+    // Handle special cases for ACK and PP responses
+    if (commandFrame == "ACK" || commandFrame == "PP") {
+        commandResponse.response = true;
+        return commandResponse;
+    }
+
+    // Handle other command frames based on their token
+    if (commandFrame.size() < 2) {
+        return commandResponse;
+    }
+
+    const std::string token = commandFrame.substr(0, 2);
+    const std::string payload = commandFrame.substr(2);
+
+    if (token == "PF") {
+        try {
+            commandResponse.response = parseFocuserStatus(payload);
+        } catch (const std::invalid_argument &) {
+            return commandResponse;
+        }
+    }
     return commandResponse;
 }
 

@@ -26,8 +26,8 @@ struct Preset {
 struct FocuserStatus {
     std::string status;
     int32_t position;
-    int16_t dustCapPosition = -1;  // -1 if unused
-    int16_t brightness = -1;       // -1 if unused
+    //int16_t dustCapPosition = -1;  // -1 if unused
+    //int16_t brightness = -1;       // -1 if unused
 };
 
 // Response payload variant covering all protocol command types
@@ -62,5 +62,6 @@ private:
     // Parser helpers
     //OSF::ResponseData parseResponse(const std::string &rawResponse);
     //OSF::StepLimits parseLimits(const std::string &payload);
+    OSF::FocuserStatus parseFocuserStatus(const std::string &commandFrame) const;
     static bool splitResponseFrames(const std::string &rawResponse, std::string &commandFrame, std::vector<std::string> &debugFrames);
 };
