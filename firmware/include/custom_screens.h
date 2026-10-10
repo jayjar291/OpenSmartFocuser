@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include "config.h"
 #include "lucide28.h"
+#include "menu_strings.h"
 #include "movement.h"
 #include "preset.h"
 #include "StarMap.h"
@@ -76,16 +77,17 @@ class IdleScreen : public Screen {
 
     // Draw focuser position marker icon inside the right bar.
     int32_t pos = Movement::getCurrentPositionSteps();
+    const int32_t softMaxSteps = Movement::getSoftMaxSteps();
     if (pos < FOCUSER_SOFT_MIN_STEPS) {
       pos = FOCUSER_SOFT_MIN_STEPS;
-    } else if (pos > FOCUSER_SOFT_MAX_STEPS) {
-      pos = FOCUSER_SOFT_MAX_STEPS;
+    } else if (pos > softMaxSteps) {
+      pos = softMaxSteps;
     }
 
     const int barTop = 1;
     const int barBottom = bottomBarY - 2;
     const int barHeight = barBottom - barTop;
-    const int32_t range = FOCUSER_SOFT_MAX_STEPS - FOCUSER_SOFT_MIN_STEPS;
+    const int32_t range = softMaxSteps - FOCUSER_SOFT_MIN_STEPS;
 
     int markerY = barBottom;
     if (range > 0) {
@@ -111,7 +113,7 @@ class IdleScreen : public Screen {
     canvas.drawString(statusText, 34, bottomBarY + 4, 1);
 
     char posMmText[12];
-    const float posMm = static_cast<float>(pos) / static_cast<float>(FOCUSER_STEPS_PER_MM);
+    const float posMm = static_cast<float>(pos) / static_cast<float>(Movement::getStepsPerMm());
     snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
 
     float targetRaDeg = 0.0f;
@@ -357,16 +359,17 @@ class PresetScreen : public Screen {
     canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
 
     int32_t pos = Movement::getCurrentPositionSteps();
+    const int32_t softMaxSteps = Movement::getSoftMaxSteps();
     if (pos < FOCUSER_SOFT_MIN_STEPS) {
       pos = FOCUSER_SOFT_MIN_STEPS;
-    } else if (pos > FOCUSER_SOFT_MAX_STEPS) {
-      pos = FOCUSER_SOFT_MAX_STEPS;
+    } else if (pos > softMaxSteps) {
+      pos = softMaxSteps;
     }
 
     const int barTop = 1;
     const int barBottom = bottomBarY - 2;
     const int barHeight = barBottom - barTop;
-    const int32_t range = FOCUSER_SOFT_MAX_STEPS - FOCUSER_SOFT_MIN_STEPS;
+    const int32_t range = softMaxSteps - FOCUSER_SOFT_MIN_STEPS;
 
     int markerY = barBottom;
     if (range > 0) {
@@ -389,7 +392,7 @@ class PresetScreen : public Screen {
     canvas.drawString(Movement::isBusy() ? "Homing" : "Preset", 34, bottomBarY + 4);
 
     char posMmText[12];
-    const float posMm = static_cast<float>(pos) / static_cast<float>(FOCUSER_STEPS_PER_MM);
+    const float posMm = static_cast<float>(pos) / static_cast<float>(Movement::getStepsPerMm());
     snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
     canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
 
@@ -572,6 +575,246 @@ class PresetScreen : public Screen {
   SaveMode mode_ = SaveMode::kAdd;
 };
 
+/*
+ * Wizard screen that drives the tool-assisted steps/mm calibration sequence.
+ * Movement::startStepCalibration() must be called before this screen is pushed.
+ */
+class CalibrationScreen : public Screen {
+ public:
+  explicit CalibrationScreen(const char *title = "Step Calibration")
+      : title_(title) {
+  }
+
+  void draw() override {
+    static constexpr int kBottomBarHeight = 20;
+    static constexpr int kRightBarWidth = 22;
+    static constexpr int kTextPaddingX = 4;
+
+    const int screenWidth = canvas.width();
+    const int screenHeight = canvas.height();
+    const int bottomBarY = screenHeight - kBottomBarHeight;
+    const int rightBarX = screenWidth - kRightBarWidth;
+    const int panelWidth = rightBarX;
+    const int panelHeight = bottomBarY;
+
+    canvas.setTextFont(1);
+    canvas.setTextSize(1);
+    canvas.fillScreen(IDLE_COLOR_BG);
+    canvas.drawRect(0, 0, panelWidth, panelHeight, IDLE_COLOR_SPACER);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BG);
+    canvas.drawString(title_, 8, 8);
+
+    const Movement::CalibrationState state = Movement::getStepCalibrationState();
+    switch (state) {
+      case Movement::CalibrationState::AwaitingBlockInsert:
+        canvas.drawString(MenuStrings::kCalibJogToFit, 8, 24);
+        canvas.drawString(MenuStrings::kCalibInsertBlock, 8, 38);
+        canvas.drawString(MenuStrings::kCalibPressSelect, 8, 52);
+        canvas.drawString(MenuStrings::kCalibHoldToCancel, 8, 66);
+        break;
+      case Movement::CalibrationState::MovingToBlockContact:
+        canvas.drawString(MenuStrings::kCalibMovingToBlock, 8, 30);
+        break;
+      case Movement::CalibrationState::AwaitingBlockRemoval:
+        canvas.drawString(MenuStrings::kCalibRemoveBlock, 8, 30);
+        canvas.drawString(MenuStrings::kCalibPressSelect, 8, 44);
+        canvas.drawString(MenuStrings::kCalibHoldToCancel, 8, 58);
+        break;
+      case Movement::CalibrationState::MovingToEndstopContact:
+        canvas.drawString(MenuStrings::kCalibMovingToEndstop, 8, 30);
+        break;
+      case Movement::CalibrationState::AwaitingConfirm: {
+        char resultText[32];
+        snprintf(resultText, sizeof(resultText), "%s%lu", MenuStrings::kCalibResultPrefix,
+                 static_cast<unsigned long>(Movement::getStepCalibrationResultStepsPerMm()));
+        canvas.drawString(resultText, 8, 30);
+        canvas.drawString(MenuStrings::kCalibSavePromptLine1, 8, 44);
+        canvas.drawString(MenuStrings::kCalibSavePromptLine2, 8, 58);
+        break;
+      }
+      case Movement::CalibrationState::VerifyHoming:
+        canvas.drawString(MenuStrings::kCalibVerifyHoming, 8, 30);
+        break;
+      case Movement::CalibrationState::VerifyBackoff:
+        canvas.drawString(MenuStrings::kCalibVerifyBackoff, 8, 30);
+        break;
+      case Movement::CalibrationState::VerifyMovingToEndstop:
+        canvas.drawString(MenuStrings::kCalibMovingToEndstop, 8, 30);
+        break;
+      case Movement::CalibrationState::VerifyDone: {
+        char deltaText[32];
+        const float deltaMm = static_cast<float>(Movement::getStepCalibrationVerifyDeltaSteps()) /
+            static_cast<float>(Movement::getStepsPerMm());
+        snprintf(deltaText, sizeof(deltaText), "%s%.3fmm", MenuStrings::kCalibVerifyDeltaPrefix, deltaMm);
+        canvas.drawString(MenuStrings::kCalibVerifyDone, 8, 30);
+        canvas.drawString(deltaText, 8, 44);
+        canvas.drawString(MenuStrings::kCalibPressSelect, 8, 58);
+        break;
+      }
+      case Movement::CalibrationState::Idle:
+      default:
+        break;
+    }
+
+    // Right-side position bar.
+    canvas.fillRect(rightBarX, 0, kRightBarWidth, panelHeight, IDLE_COLOR_RIGHT_BAR);
+    canvas.drawRect(rightBarX, 0, kRightBarWidth, panelHeight, IDLE_COLOR_RIGHT_BAR_BORDER);
+
+    // Bottom status bar across full width.
+    canvas.fillRect(0, bottomBarY, screenWidth, kBottomBarHeight, IDLE_COLOR_BOTTOM_BAR);
+
+    int32_t pos = Movement::getCurrentPositionSteps();
+    const int32_t softMaxSteps = Movement::getSoftMaxSteps();
+    if (pos < FOCUSER_SOFT_MIN_STEPS) {
+      pos = FOCUSER_SOFT_MIN_STEPS;
+    } else if (pos > softMaxSteps) {
+      pos = softMaxSteps;
+    }
+
+    const int barTop = 1;
+    const int barBottom = bottomBarY - 2;
+    const int barHeight = barBottom - barTop;
+    const int32_t range = softMaxSteps - FOCUSER_SOFT_MIN_STEPS;
+
+    int markerY = barBottom;
+    if (range > 0) {
+      markerY = barBottom - static_cast<int>(
+          (static_cast<int64_t>(pos - FOCUSER_SOFT_MIN_STEPS) * barHeight) / range);
+    }
+
+    const int indicatorY = constrain(markerY, barTop + 2, barBottom - 2);
+    canvas.fillRect(rightBarX + 4, indicatorY, kRightBarWidth - 8, 2, IDLE_COLOR_TEXT);
+
+    canvas.setTextColor(kIdleStatusIconColor, IDLE_COLOR_BOTTOM_BAR);
+    canvas.loadFont(lucide28);
+    canvas.drawString(kIconTelescope, kTextPaddingX, bottomBarY + 3);
+    canvas.unloadFont();
+    canvas.setTextFont(1);
+    canvas.setTextSize(1);
+    canvas.drawFastVLine(28, bottomBarY + 3, kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+    canvas.setTextColor(IDLE_COLOR_TEXT, IDLE_COLOR_BOTTOM_BAR);
+    canvas.drawString(statusText(state), 34, bottomBarY + 4, 1);
+
+    char posMmText[12];
+    const float posMm = static_cast<float>(pos) / static_cast<float>(Movement::getStepsPerMm());
+    snprintf(posMmText, sizeof(posMmText), "%.2f", posMm);
+    canvas.drawRightString(posMmText, screenWidth - 2, bottomBarY + 4, 1);
+    canvas.drawFastVLine(screenWidth - canvas.textWidth(posMmText, 1) - 8, bottomBarY + 3,
+                         kBottomBarHeight - 6, IDLE_COLOR_SPACER);
+  }
+
+  void handleInput() override {
+    if (Movement::getStepCalibrationState() == Movement::CalibrationState::Idle) {
+      Movement::startStepCalibration();
+    }
+
+    if (digitalRead(BUTTON_SELECT_PIN) == buttonVoltage) {
+      if (!selectClicked && !longPressHandled) {
+        selectPressTime = millis();
+        selectClicked = true;
+      } else if ((millis() - selectPressTime >= kSelectLongPressMs) && !longPressHandled) {
+        onSelectLongPress();
+        longPressHandled = true;
+      }
+    } else if (digitalRead(BUTTON_SELECT_PIN) == !buttonVoltage) {
+      if (selectClicked) {
+        onSelectShortPress();
+        selectClicked = false;
+        longPressHandled = false;
+      }
+    }
+
+    bool upHeld = (digitalRead(BUTTON_UP_PIN) == buttonVoltage);
+    bool downHeld = (digitalRead(BUTTON_DOWN_PIN) == buttonVoltage);
+    if (upHeld && !downHeld) {
+      onUpButtonHeld();
+    } else if (downHeld && !upHeld) {
+      onDownButtonHeld();
+    } else {
+      onDirectionButtonsReleased();
+    }
+
+    draw();
+  }
+
+  const char *getTitle() const override {
+    return title_;
+  }
+
+ private:
+  static const char* statusText(Movement::CalibrationState state) {
+    switch (state) {
+      case Movement::CalibrationState::AwaitingBlockInsert:
+        return "Jog / Insert";
+      case Movement::CalibrationState::MovingToBlockContact:
+        return "Seek block";
+      case Movement::CalibrationState::AwaitingBlockRemoval:
+        return "Remove block";
+      case Movement::CalibrationState::MovingToEndstopContact:
+        return "Seek endstop";
+      case Movement::CalibrationState::AwaitingConfirm:
+        return "Confirm";
+      case Movement::CalibrationState::VerifyHoming:
+        return "Verify: home";
+      case Movement::CalibrationState::VerifyBackoff:
+        return "Verify: back off";
+      case Movement::CalibrationState::VerifyMovingToEndstop:
+        return "Verify: seek";
+      case Movement::CalibrationState::VerifyDone:
+        return "Verified";
+      case Movement::CalibrationState::Idle:
+      default:
+        return "Waiting";
+    }
+  }
+
+  bool canJogInCurrentState() const {
+    const Movement::CalibrationState state = Movement::getStepCalibrationState();
+    return state == Movement::CalibrationState::AwaitingBlockInsert ||
+           state == Movement::CalibrationState::AwaitingBlockRemoval;
+  }
+
+  void onUpButtonHeld() {
+    if (canJogInCurrentState()) {
+      Movement::jogForward();
+    }
+  }
+
+  void onDownButtonHeld() {
+    if (canJogInCurrentState()) {
+      Movement::jogBackward();
+    }
+  }
+
+  void onDirectionButtonsReleased() {
+    Movement::stopJog();
+  }
+
+  void onSelectShortPress() {
+    Movement::stepCalibrationContinue();
+    if (Movement::getStepCalibrationState() == Movement::CalibrationState::Idle &&
+        screenManager.canGoBack()) {
+      screenManager.popScreen();
+    }
+  }
+
+  void onSelectLongPress() {
+    Movement::abortStepCalibration();
+    // Clear press tracking so the release after leaving doesn't fire a stale short press on re-entry.
+    selectClicked = false;
+    longPressHandled = false;
+    if (screenManager.canGoBack()) {
+      screenManager.popScreen();
+    }
+    prevSelectState = buttonVoltage;
+  }
+
+  bool selectClicked = false;
+  bool longPressHandled = false;
+  unsigned long selectPressTime = 0;
+  const char *title_;
+};
+
 class DeviceInfoScreen : public Screen {
  public:
   explicit DeviceInfoScreen(const char* title = "Device Info")
@@ -640,7 +883,7 @@ class DeviceInfoScreen : public Screen {
                      Movement::isBusy() ? kInfoAccentWarn : kInfoValue);
     leftY += kLineHeight;
 
-    snprintf(valueBuffer, sizeof(valueBuffer), "%.2fmm", static_cast<float>(Movement::getCurrentPositionSteps()) / static_cast<float>(FOCUSER_STEPS_PER_MM));
+    snprintf(valueBuffer, sizeof(valueBuffer), "%.2fmm", static_cast<float>(Movement::getCurrentPositionSteps()) / static_cast<float>(Movement::getStepsPerMm()));
     drawKeyValueLine(leftX, leftValueRightX, leftY, "Pos", valueBuffer);
     leftY += kLineHeight;
 
@@ -783,4 +1026,5 @@ class DeviceInfoScreen : public Screen {
 extern IdleScreen idle;
 extern PresetScreen presetScreen;
 extern DeviceInfoScreen deviceInfoScreen;
+extern CalibrationScreen calibrationScreen;
 }

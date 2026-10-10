@@ -18,11 +18,22 @@ namespace {
 
 constexpr const char* kCurrentPositionNamespace = "CurrentPos";
 constexpr const char* kCurrentPositionKey = "steps";
+constexpr const char* kCalibrationNamespace = "Calib";
+constexpr const char* kStepsPerMmKey = "stepsPerMm";
 
 volatile bool homingInProgress = false;
 volatile bool homingReturnInProgress = false;
 volatile bool endstopInterruptPending = false;
 volatile bool endstopTriggeredDuringHoming = false;
+volatile bool calibInProgress = false;
+volatile bool endstopTriggeredDuringCalib = false;
+Movement::CalibrationState calibState = Movement::CalibrationState::Idle;
+int32_t calibFirstContactSteps = 0;
+int32_t calibSecondContactSteps = 0;
+uint32_t calibComputedStepsPerMm = 0;
+int32_t calibVerifyDeltaSteps = 0;
+uint32_t stepsPerMmCached = FOCUSER_STEPS_PER_MM_DEFAULT;
+uint16_t desiredMicrosteps = TMC_MICROSTEPS;
 bool jogActive = false;
 uint32_t lastMotorActivityMs = 0;
 bool uartConnectionLost = false;
@@ -39,12 +50,22 @@ void touchMotorActivity() {
   lastMotorActivityMs = millis();
 }
 
+void loadStepsPerMm() {
+  Preferences preferences;
+  if (preferences.begin(kCalibrationNamespace, true)) {
+    stepsPerMmCached = preferences.getULong(kStepsPerMmKey, FOCUSER_STEPS_PER_MM_DEFAULT);
+    preferences.end();
+  }
+}
+
 void configureTmcDriverRegisters() {
   focuserDriver.begin();
   focuserDriver.toff(4);
   focuserDriver.rms_current(TMC_RMS_CURRENT);
   focuserDriver.en_spreadCycle(TMC_SPREAD_CYCLE);
-  focuserDriver.microsteps(TMC_MICROSTEPS);
+  focuserDriver.microsteps(desiredMicrosteps);
+  focuserDriver.intpol(TMC_INTERPOLATE);
+
   focuserDriver.pwm_autoscale(true);
 }
 
@@ -56,6 +77,9 @@ void IRAM_ATTR onEndstopInterrupt() {
   endstopInterruptPending = true;
   if (homingInProgress || homingReturnInProgress) {
     endstopTriggeredDuringHoming = true;
+  }
+  if (calibInProgress) {
+    endstopTriggeredDuringCalib = true;
   }
 }
 
@@ -124,6 +148,7 @@ void initializeDriver() {
   
   lastUartReconnectAttemptMs = millis();
   
+  loadStepsPerMm();
   loadPersistentCurrentPosition();
   
 }
@@ -179,7 +204,7 @@ bool isMotorEnabled() {
 }
 
 void jogForward() {
-  if (focuserStepper == nullptr || homingInProgress || homingReturnInProgress) {
+  if (focuserStepper == nullptr || homingInProgress || homingReturnInProgress || calibInProgress) {
     return;
   }
   if (!motorEnabled) {
@@ -197,7 +222,7 @@ void jogForward() {
 }
 
 void jogBackward() {
-  if (focuserStepper == nullptr || homingInProgress || homingReturnInProgress) {
+  if (focuserStepper == nullptr || homingInProgress || homingReturnInProgress || calibInProgress) {
     return;
   }
   if (!motorEnabled) {
@@ -215,7 +240,7 @@ void jogBackward() {
 }
 
 void stopJog() {
-  if (focuserStepper == nullptr || homingInProgress || homingReturnInProgress) {
+  if (focuserStepper == nullptr || homingInProgress || homingReturnInProgress || calibInProgress) {
     return;
   }
   if (jogActive) {
@@ -253,7 +278,7 @@ void moveToPositionMm(float targetMm) {
   jogActive = false;
   touchMotorActivity();
   setMotorEnabledState(true);
-  int32_t targetSteps = static_cast<int32_t>(targetMm * FOCUSER_STEPS_PER_MM);
+  int32_t targetSteps = static_cast<int32_t>(targetMm * stepsPerMmCached);
   if (!checkSoftEndstops(targetSteps)) {
     DebugSerial::printFramedValue("Target position ", targetSteps, " steps is outside of soft endstop limits. movement ignored.");
     return;
@@ -450,9 +475,7 @@ void updateHoming() {
       homingReturnInProgress = false;
       homingInProgress = false;
       focuserStepper->setSpeedInHz(speedHz);
-      //respond with :HD# to indicate homing complete
       savePersistentCurrentPosition();
-      Serial.println(":HD#");
       touchMotorActivity();
     }
     return;
@@ -476,7 +499,7 @@ void updateHoming() {
     focuserStepper->forceStop();
     DebugSerial::printFramed("moving back to return position...");
     focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
-    focuserStepper->moveTo(FOCUSER_STEPS_PER_MM * FOCUSER_HOMING_RETURN_MM);
+    focuserStepper->moveTo(FOCUSER_HOMING_RETURN_MM * static_cast<int32_t>(stepsPerMmCached));
     homingReturnInProgress = true;
     touchMotorActivity();
   }
@@ -502,7 +525,8 @@ void updateMotorIdleTimeout() {
 }
 
 bool isBusy() {
-  return homingInProgress || jogActive || homingReturnInProgress || (focuserStepper != nullptr && focuserStepper->isRunning());
+  return homingInProgress || jogActive || homingReturnInProgress || calibInProgress ||
+         (focuserStepper != nullptr && focuserStepper->isRunning());
 }
 
 bool isUartConnected() {
@@ -559,7 +583,7 @@ uint8_t getSpeedSetting() {
 }
 
 bool checkSoftEndstops(int32_t targetSteps) {
-  return targetSteps >= FOCUSER_SOFT_MIN_STEPS && targetSteps <= FOCUSER_SOFT_MAX_STEPS;
+  return targetSteps >= FOCUSER_SOFT_MIN_STEPS && targetSteps <= Movement::getSoftMaxSteps();
 }
 
 void updateSoftEndstops() {
@@ -567,8 +591,9 @@ void updateSoftEndstops() {
     return;
   }
   const int32_t pos = focuserStepper->getCurrentPosition();
-  if (pos > FOCUSER_SOFT_MAX_STEPS) {
-    focuserStepper->forceStopAndNewPosition(FOCUSER_SOFT_MAX_STEPS);
+  const int32_t softMaxSteps = Movement::getSoftMaxSteps();
+  if (pos > softMaxSteps) {
+    focuserStepper->forceStopAndNewPosition(softMaxSteps);
     DebugSerial::printFramed("Soft endstop triggered. Stopping movement.");
     jogActive = false;
     touchMotorActivity();
@@ -589,7 +614,199 @@ MovementStatus getMovementStatus() {
 
 void getLimits(int32_t& minSteps, int32_t& maxSteps) {
   minSteps = FOCUSER_SOFT_MIN_STEPS;
-  maxSteps = FOCUSER_SOFT_MAX_STEPS;
+  maxSteps = Movement::getSoftMaxSteps();
+}
+
+uint32_t getStepsPerMm() {
+  return stepsPerMmCached;
+}
+
+bool setStepsPerMm(uint32_t stepsPerMm) {
+  if (stepsPerMm == 0) {
+    return false;
+  }
+  stepsPerMmCached = stepsPerMm;
+  Preferences preferences;
+  if (!preferences.begin(kCalibrationNamespace, false)) {
+    return false;
+  }
+  preferences.putULong(kStepsPerMmKey, stepsPerMm);
+  preferences.end();
+  return true;
+}
+
+int32_t getSoftMaxSteps() {
+  return static_cast<int32_t>(FOCUSER_SOFT_MAX_MM * stepsPerMmCached);
+}
+
+void startStepCalibration() {
+  if (focuserStepper == nullptr || homingInProgress || homingReturnInProgress || isBusy() || !uartConnectedCached) {
+    return;
+  }
+  calibFirstContactSteps = 0;
+  calibSecondContactSteps = 0;
+  calibComputedStepsPerMm = 0;
+  calibVerifyDeltaSteps = 0;
+  calibState = CalibrationState::AwaitingBlockInsert;
+}
+
+namespace {
+
+// Starts a continuous move toward the endstop, used by all calibration contact moves.
+void beginCalibrationContactMove(CalibrationState nextState) {
+  if (focuserStepper == nullptr) {
+    return;
+  }
+  calibState = nextState;
+  noInterrupts();
+  endstopTriggeredDuringCalib = false;
+  interrupts();
+  setMotorEnabledState(true);
+  focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
+  calibInProgress = true;
+  touchMotorActivity();
+  focuserStepper->runBackward();
+}
+
+} // namespace
+
+void stepCalibrationContinue() {
+  if (focuserStepper == nullptr) {
+    return;
+  }
+  switch (calibState) {
+    case CalibrationState::AwaitingBlockInsert:
+      beginCalibrationContactMove(CalibrationState::MovingToBlockContact);
+      break;
+    case CalibrationState::AwaitingBlockRemoval:
+      beginCalibrationContactMove(CalibrationState::MovingToEndstopContact);
+      break;
+    case CalibrationState::AwaitingConfirm:
+      if (calibComputedStepsPerMm > 0) {
+        setStepsPerMm(calibComputedStepsPerMm);
+      }
+      // Verify the new calibration by re-homing, backing off, and re-approaching the endstop.
+      calibState = CalibrationState::VerifyHoming;
+      startHoming();
+      break;
+    case CalibrationState::VerifyDone:
+      calibState = CalibrationState::Idle;
+      break;
+    default:
+      break;
+  }
+}
+
+void abortStepCalibration() {
+  if (homingInProgress || homingReturnInProgress) {
+    abortHoming();
+  }
+  if (focuserStepper != nullptr) {
+    focuserStepper->forceStop();
+    focuserStepper->setSpeedInHz(speedHz);
+  }
+  calibInProgress = false;
+  jogActive = false;
+  calibState = CalibrationState::Idle;
+  noInterrupts();
+  endstopTriggeredDuringCalib = false;
+  interrupts();
+  touchMotorActivity();
+}
+
+void updateStepCalibration() {
+  if (focuserStepper == nullptr) {
+    return;
+  }
+
+  if (calibState == CalibrationState::VerifyHoming) {
+    if (!homingInProgress && !homingReturnInProgress) {
+      calibState = CalibrationState::VerifyBackoff;
+    }
+    return;
+  }
+
+  if (calibState == CalibrationState::VerifyBackoff) {
+    if (!calibInProgress) {
+      touchMotorActivity();
+      focuserStepper->setSpeedInHz(HOMING_SPEED_STEPS_PER_SEC);
+      focuserStepper->moveTo(getCurrentPositionSteps() +
+          static_cast<int32_t>(FOCUSER_CALIBRATION_VERIFY_BACKOFF_MM * stepsPerMmCached));
+      calibInProgress = true;
+    } else if (!focuserStepper->isRunning()) {
+      calibInProgress = false;
+      beginCalibrationContactMove(CalibrationState::VerifyMovingToEndstop);
+    }
+    return;
+  }
+
+  if (!calibInProgress) {
+    return;
+  }
+
+  if (!motorEnabled) {
+    DebugSerial::printFramed("Motor disabled during step calibration. Aborting.");
+    abortStepCalibration();
+    return;
+  }
+
+  touchMotorActivity();
+
+  bool triggered = false;
+  noInterrupts();
+  triggered = endstopTriggeredDuringCalib;
+  if (triggered) {
+    endstopTriggeredDuringCalib = false;
+  }
+  interrupts();
+
+  if (!triggered && !isEndstopTriggered()) {
+    return;
+  }
+
+  focuserStepper->forceStop();
+  focuserStepper->setSpeedInHz(speedHz);
+  calibInProgress = false;
+
+  if (calibState == CalibrationState::MovingToBlockContact) {
+    calibFirstContactSteps = getCurrentPositionSteps();
+    calibState = CalibrationState::AwaitingBlockRemoval;
+  } else if (calibState == CalibrationState::MovingToEndstopContact) {
+    calibSecondContactSteps = getCurrentPositionSteps();
+    const int32_t deltaSteps = abs(calibFirstContactSteps - calibSecondContactSteps);
+    calibComputedStepsPerMm = (deltaSteps > 0)
+        ? static_cast<uint32_t>(deltaSteps / FOCUSER_CALIBRATION_BLOCK_MM)
+        : 0;
+    calibState = CalibrationState::AwaitingConfirm;
+  } else if (calibState == CalibrationState::VerifyMovingToEndstop) {
+    calibVerifyDeltaSteps = getCurrentPositionSteps();
+    calibState = CalibrationState::VerifyDone;
+  }
+
+  touchMotorActivity();
+}
+
+CalibrationState getStepCalibrationState() {
+  return calibState;
+}
+
+uint32_t getStepCalibrationResultStepsPerMm() {
+  return calibComputedStepsPerMm;
+}
+
+int32_t getStepCalibrationVerifyDeltaSteps() {
+  return calibVerifyDeltaSteps;
+}
+
+void setMicrosteps(uint16_t microsteps) {
+  if (microsteps == 0) {
+    return;
+  }
+  desiredMicrosteps = microsteps;
+  if (focuserStepper != nullptr) {
+    focuserDriver.microsteps(microsteps);
+    driverMicrostepsCached = focuserDriver.microsteps();
+  }
 }
 
 } // namespace Movement

@@ -139,6 +139,39 @@ void handleHeartbeat(const char* parameters, size_t parametersLength) {
   gSerial->println(":PP#");
 }
 
+//:PF# Poll focuser status, response :PF<status>,<position>#, if add-ons are present, additional fields may be included [<dustCapPosition>,<LightboxBrightness>].
+void handlePollStatus(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->print(":PF");
+  switch (Movement::getMovementStatus()) {
+    case Movement::MovementStatus::Idle:
+      gSerial->print("Idle");
+      break;
+    case Movement::MovementStatus::Moving:
+      gSerial->print("Moving");
+      break;
+    case Movement::MovementStatus::Homing:
+      gSerial->print("Homing");
+      break;
+    case Movement::MovementStatus::Error:
+      gSerial->print("Error");
+      break;
+  }
+  gSerial->print(",");
+  gSerial->print(Movement::getCurrentPositionSteps());
+  // Add additional fields for add-ons here if present.
+  //if (Addons::hasAddon(Addons::AddOnType::DustCap)) {
+  //  gSerial->print(",");
+  //  gSerial->print(Addons::getDustCapPosition());
+  //}
+  //if (Addons::hasAddon(Addons::AddOnType::Lightbox)) {
+  //  gSerial->print(",");
+  //  gSerial->print(Addons::getLightboxBrightness());
+  //}
+  gSerial->println("#");
+}
+
 //:FV# get firmware version, response :FV<versionString>#.
 void handleGetFirmwareVersion(const char* parameters, size_t parametersLength) {
   (void)parameters;
@@ -203,6 +236,14 @@ void handleGetLimits(const char* parameters, size_t parametersLength) {
   gSerial->print(minSteps);
   gSerial->print(",");
   gSerial->print(maxSteps);
+  gSerial->println("#");
+}
+//:GT# get current step per millimeter, response :GT<stepsPerMm>#.
+void handleGetStepsPerMm(const char* parameters, size_t parametersLength) {
+  (void)parameters;
+  (void)parametersLength;
+  gSerial->print(":GT");
+  gSerial->print(Movement::getStepsPerMm());
   gSerial->println("#");
 }
 
@@ -531,6 +572,49 @@ void handleMoveRelative(const char* parameters, size_t parametersLength) {
     return;
   }
 
+  if (!Movement::checkSoftEndstops(Movement::getCurrentPositionSteps() + relativeSteps)) {
+    gSerial->println(kResponsePositionExceedLimit);
+    return;
+  }
+
+  Movement::moveRelative(relativeSteps);
+  gSerial->println(kResponseAck);
+}
+//:MM<MillimeterSteps># move to absolute position in millimeters, response :ACK#.
+void handleMoveAbsoluteMillimeters(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  float positionMillimeters = 0;
+  if (!readFloatArg(args, 0, positionMillimeters)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  Movement::moveToPositionMm(positionMillimeters);
+  gSerial->println(kResponseAck);
+}
+
+//:MN<MillimeterSteps># move relative number of millimeters, response :ACK#.
+void handleMoveRelativeMillimeters(const char* parameters, size_t parametersLength) {
+  char payload[kMaxPayloadLength] = {0};
+  ParsedArgs args;
+  if (!parseArgs(parameters, parametersLength, 1, payload, args)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  float relativeMillimeters = 0;
+  if (!readFloatArg(args, 0, relativeMillimeters)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+
+  int32_t relativeSteps = static_cast<int32_t>(relativeMillimeters * Movement::getStepsPerMm());
   if (!Movement::checkSoftEndstops(Movement::getCurrentPositionSteps() + relativeSteps)) {
     gSerial->println(kResponsePositionExceedLimit);
     return;

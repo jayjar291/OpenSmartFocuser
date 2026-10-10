@@ -1,7 +1,7 @@
 #pragma once
 
-//#include "board_config/esp32_s3_devkitc1_pins.h"
-#include "board_config/esp32_s3_mainboard_OSF.h"
+#include "board_config/esp32_s3_devkitc1_pins.h"
+//#include "board_config/esp32_s3_mainboard_OSF.h"
 
 /*
  * TFT_eSPI is configured through a custom setup header passed in build flags.
@@ -10,12 +10,15 @@
 
 /*
  * Generic motion and UART timing configuration for the focuser driver stack.
- * System now runs in full-step mode (1 microstep) for all operations.
  */
 #define TMC_UART_BAUDRATE 115200
 #define TMC_DRIVER_ADDRESS 0b00
+
+
 #define TMC_MAX_SPEED 30000
 #define TMC_MAX_ACCELERATION 50000
+
+
 // Speed settings for different focus jog modes and preset saving.
 #define FINE_FOCUS_SPEED_STEPS_PER_SEC 3000
 #define SLOW_FOCUS_SPEED_STEPS_PER_SEC 6000
@@ -35,23 +38,36 @@
  */
 #define TMC_RMS_CURRENT 650
 #define MOTOR_IDLE_TIMEOUT_MS 30000
-#define TMC_MICROSTEPS 16
+#define TMC_MICROSTEPS 4
 #define TMC_SPREAD_CYCLE true
+#define TMC_INTERPOLATE true
 
 /*
  * Focuser travel calibration.
- * Measured: 184000 full steps (HOMING_MICROSTEPS=1) = 4.74 mm.
- * FOCUSER_STEPS_PER_MM is in runtime step units (full-step mode).
+ * Steps/mm is persisted at runtime (see Movement::getStepsPerMm) and can be
+ * re-measured via the step calibration wizard; this is only the initial value.
  */
-#define FOCUSER_STEPS_PER_MM 38819
+#define FOCUSER_STEPS_PER_MM_DEFAULT 38819
+
+/*
+ * Thickness of the calibration block used by the step calibration wizard.
+ */
+#define FOCUSER_CALIBRATION_BLOCK_MM 15
+
+/*
+ * Distance the draw tube backs off before re-approaching the endstop during
+ * the post-calibration verification pass.
+ */
+#define FOCUSER_CALIBRATION_VERIFY_BACKOFF_MM 5
 
 /*
  * Software travel limits (enforced in normal operating mode).
+ * FOCUSER_SOFT_MAX_STEPS depends on the runtime steps/mm value; see
+ * Movement::getSoftMaxSteps().
  */
 #define FOCUSER_SOFT_MIN_MM    0
 #define FOCUSER_SOFT_MAX_MM    55
 #define FOCUSER_SOFT_MIN_STEPS 0
-#define FOCUSER_SOFT_MAX_STEPS (FOCUSER_SOFT_MAX_MM * FOCUSER_STEPS_PER_MM)
 #define FOCUSER_HOMING_RETURN_MM 1
 
 /*
@@ -117,5 +133,8 @@
 #define IDLE_COLOR_RIGHT_BAR_BORDER MENU_COLOR_SELECTION_BORDER
 #define IDLE_COLOR_SPACER 0x7800
 
+/*
+ * Add-on hardware features enable or disable specific hardware components.
+ */
 #define HAS_SHUTTER true
 #define HAS_FLAT_FRAME_PANEL true
