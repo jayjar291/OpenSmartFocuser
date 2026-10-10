@@ -144,7 +144,20 @@ void handlePollStatus(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
   gSerial->print(":PF");
-  gSerial->print(Movement::getMovementStatus() == Movement::MovementStatus::Idle ? "Idle" : Movement::getMovementStatus() == Movement::MovementStatus::Moving ? "Moving" : "Homing");
+  switch (Movement::getMovementStatus()) {
+    case Movement::MovementStatus::Idle:
+      gSerial->print("Idle");
+      break;
+    case Movement::MovementStatus::Moving:
+      gSerial->print("Moving");
+      break;
+    case Movement::MovementStatus::Homing:
+      gSerial->print("Homing");
+      break;
+    case Movement::MovementStatus::Error:
+      gSerial->print("Error");
+      break;
+  }
   gSerial->print(",");
   gSerial->print(Movement::getCurrentPositionSteps());
   // Add additional fields for add-ons here if present.

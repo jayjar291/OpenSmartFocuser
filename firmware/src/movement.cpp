@@ -475,9 +475,7 @@ void updateHoming() {
       homingReturnInProgress = false;
       homingInProgress = false;
       focuserStepper->setSpeedInHz(speedHz);
-      //respond with :HD# to indicate homing complete
       savePersistentCurrentPosition();
-      Serial.println(":HD#");
       touchMotorActivity();
     }
     return;
