@@ -142,10 +142,10 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
     else if (token == "TM") {
         try {
             if (payload == "0") {
-                commandResponse.response = false;
+                commandResponse.response = int32_t{0};
                 return commandResponse;
             } else if (payload == "1") {
-                commandResponse.response = true;
+                commandResponse.response = int32_t{1};
                 return commandResponse;
             } else {
                 throw std::invalid_argument("Invalid TM payload");
@@ -203,8 +203,9 @@ OSF::FocuserStatus OSFprotocol::parseFocuserStatus(const std::string &commandFra
         throw std::invalid_argument("Invalid focuser status frame");
     }
 
+    const size_t additionalFields = commandFrame.find(',', separator + 1);
     const char *positionBegin = commandFrame.data() + separator + 1;
-    const char *positionEnd = commandFrame.data() + commandFrame.size();
+    const char *positionEnd = commandFrame.data() + (additionalFields == std::string::npos ? commandFrame.size() : additionalFields);
     int32_t position;
     const auto result = std::from_chars(positionBegin, positionEnd, position);
     if (result.ec != std::errc{} || result.ptr != positionEnd) {
