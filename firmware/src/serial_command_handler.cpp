@@ -139,12 +139,12 @@ void handleHeartbeat(const char* parameters, size_t parametersLength) {
   gSerial->println(":PP#");
 }
 
-//:PS# Poll focuser status, response :PS<status>,<position>#, if add-ons are present, additional fields may be included [<dustCapPosition>,<LightboxBrightness>].
+//:PF# Poll focuser status, response :PF<status>,<position>#, if add-ons are present, additional fields may be included [<dustCapPosition>,<LightboxBrightness>].
 void handlePollStatus(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
-  gSerial->print(":PS");
-  gSerial->print(Movement::getMovementStatus() == Movement::MovementStatus::Idle ? "Idle" : "Moving");
+  gSerial->print(":PF");
+  gSerial->print(Movement::getMovementStatus() == Movement::MovementStatus::Idle ? "Idle" : Movement::getMovementStatus() == Movement::MovementStatus::Moving ? "Moving" : "Homing");
   gSerial->print(",");
   gSerial->print(Movement::getCurrentPositionSteps());
   // Add additional fields for add-ons here if present.
