@@ -63,9 +63,21 @@ public:
 
 private:
     int m_fd;
-    
+
     // Parse focuser status from the command frame
     OSF::FocuserStatus parseFocuserStatus(const std::string &commandFrame) const;
+    // Parse step limits from the command frame
+    OSF::StepLimits parseStepLimits(const std::string &commandFrame) const;
+    // Parse target coordinates from the command frame
+    OSF::TargetCoords parseTargetCoords(const std::string &commandFrame) const;
+    // Parse preset from the preset frame <presetId>,<name>,<steps>
+    OSF::Preset parsePreset(const std::string &presetFrame) const;
+    // Parse preset list from the command frame preset frames are separated by ';'
+    std::vector<OSF::Preset> parsePresetList(const std::string &commandFrame) const;
+    // Parse add-on list from the command frame
+    std::vector<std::string> parseAddonList(const std::string &commandFrame) const;
+    // Parse single integer from the command frame
+    int32_t parseInt32(const std::string &commandFrame) const;
     // Split raw response into command frame and debug frames
     static bool splitResponseFrames(const std::string &rawResponse, std::string &commandFrame, std::vector<std::string> &debugFrames);
 };
