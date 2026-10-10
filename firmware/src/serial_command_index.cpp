@@ -41,9 +41,9 @@ const CommandEntry kCommands[] = {
   {":PG", SerialCommandHandler::handleGotoPreset},
   //:PR<presetId># get preset by id, response :PR<presetId>,<name>,<steps>#.
   {":PR", SerialCommandHandler::handleGetPreset},
-  //:PL# list presets, response :PL<presetId>,<name>,<steps># ends with :PL!# 
+  //:PL# list presets, response :PL<presetId>,<name>,<steps># additional presets are added as[;<presetId>,<name>,<steps>]#
   {":PL", SerialCommandHandler::handleListPresets},
-  //:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>#. If steps is -1, current position is used.
+  //:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>,<Steps>#. If steps is -1, current position is used.
   {":PA", SerialCommandHandler::handleAddPreset},
   //:PS<presetId>,<steps>,<presetName># set preset by id, response :ACK#. If steps is -1, current position is used.
   {":PS", SerialCommandHandler::handleSetPreset},
@@ -77,7 +77,7 @@ const CommandEntry kCommands[] = {
   //:EM# enable motor, response :ACK#.
   {":EM", SerialCommandHandler::handleEnableMotor},
   //--------------------------------------------------------------addon commands below------------------------------------------------------
-  //:AQ# Queries add-ons, response :AQ<Type># where type is the add-on type or NONE if no add-on is present. ends with :AQ!# if multiple add-ons are present.
+  //:AQ# Queries add-ons, response :AQ<Type># additional add-ons are added as [,<Type>] example :AQ<Type1>,<Type2># if multiple add-ons are present.
   {":AQ", SerialCommandHandler::handleQueryAddons}, 
   //:FP<Brightness># set Flat panel brightness, response :ACK#. Brightness is 0-255 0 is off, 255 is max brightness
   {":FP", SerialCommandHandler::handleSetFlatPanelBrightness},
