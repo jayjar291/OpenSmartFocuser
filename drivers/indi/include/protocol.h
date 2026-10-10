@@ -5,28 +5,30 @@
 
 namespace OSF {
 
-// Structures for commands returning multiple fields
+// Typed values returned by protocol commands. Keeping response shapes explicit
+// lets the driver distinguish a valid payload from a transport/parse failure.
 
-// Structure representing step boundary limits for the focuser
+// Hardware bounds supplied by :GL and used to constrain INDI position inputs.
 struct StepLimits {
     int32_t minSteps;
     int32_t maxSteps;
 };
 
-// Structure representing target coordinates for the starmap
+// :TG payload fields; retained for the protocol parser although the active
+// focuser driver does not currently expose star-map controls.
 struct TargetCoords {
     double ra;
     double dec;
     std::string name;
 };
 
-// Structure representing a preset for the focuser
+// One preset record used by the preset response parser.
 struct Preset {
     int32_t id;
     std::string name;
     int32_t steps;
 };
-// Structure representing the status of the focuser
+// Leading fields of :PF; trailing optional add-on values are currently ignored.
 struct FocuserStatus {
     std::string status;
     int32_t position;
@@ -34,7 +36,8 @@ struct FocuserStatus {
     //int16_t brightness = -1;       // -1 if unused
 };
 
-// Response payload variant covering all protocol command types
+// Exactly one response shape is active at a time. bool represents ACK/NAK,
+// integer and aggregate alternatives represent parsed command-specific data.
 using ResponseData = std::variant<
     bool,                   // ACK (:ACK# -> true, error/NAK -> false)
     int32_t,                // Single integer 
@@ -46,7 +49,8 @@ using ResponseData = std::variant<
     std::vector<Preset>,    // Preset list 
     std::vector<std::string>// Add-on list
 >;
-// Structure representing a command response, including the typed response and debug frames
+// Couples the parsed command result with any separate !...* firmware
+// diagnostic frames received in the same serial read.
 struct CommandResponse {
     ResponseData response;
     std::vector<std::string> debugFrames;
@@ -56,28 +60,27 @@ struct CommandResponse {
 
 class OSFprotocol {
 public:
+    // Bind all later command exchanges to the serial file descriptor.
     explicit OSFprotocol(int fd);
 
-    // Send command string and receive typed response
+    // Send one framed command and return its typed response plus diagnostics.
     OSF::CommandResponse sendCommand(const std::string &cmd);
 
 private:
+    // Non-owning descriptor from Connection::Serial; its owner controls lifetime.
     int m_fd;
 
-    // Parse focuser status from the command frame
+    // Convert comma-delimited response payloads into typed records; each parser
+    // throws invalid_argument when a required field is absent or malformed.
     OSF::FocuserStatus parseFocuserStatus(const std::string &commandFrame) const;
-    // Parse step limits from the command frame
     OSF::StepLimits parseStepLimits(const std::string &commandFrame) const;
-    // Parse target coordinates from the command frame
     OSF::TargetCoords parseTargetCoords(const std::string &commandFrame) const;
-    // Parse preset from the preset frame <presetId>,<name>,<steps>
     OSF::Preset parsePreset(const std::string &presetFrame) const;
-    // Parse preset list from the command frame preset frames are separated by ';'
     std::vector<OSF::Preset> parsePresetList(const std::string &commandFrame) const;
-    // Parse add-on list from the command frame
     std::vector<std::string> parseAddonList(const std::string &commandFrame) const;
-    // Parse single integer from the command frame
     int32_t parseInt32(const std::string &commandFrame) const;
-    // Split raw response into command frame and debug frames
+
+    // Separate complete ':' command frames from '!' diagnostic frames while
+    // leaving incomplete trailing bytes available for a subsequent read.
     static bool splitResponseFrames(const std::string &rawResponse, std::string &commandFrame, std::vector<std::string> &debugFrames);
 };

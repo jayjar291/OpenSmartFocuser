@@ -1,6 +1,10 @@
 # OpenSmartFocuser USB CDC serial alias
-# Matches firmware USB descriptors:
+# udev evaluates this rule for tty devices and walks their USB parent attributes.
+# All four identity matches prevent another CDC device from receiving this alias.
+# These values must match the descriptors compiled into the focuser firmware:
 #   VID:PID = 1209:F0C1
 #   manufacturer = JayTek
 #   product = OpenSmartFocuser
+# On a match, create /dev/OSF, grant dialout group access with mode 0660, and
+# add uaccess so the active desktop user can access the serial port.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="f0c1", ATTRS{manufacturer}=="JayTek", ATTRS{product}=="OpenSmartFocuser", SYMLINK+="OSF", GROUP="dialout", MODE="0660", TAG+="uaccess"

@@ -1,9 +1,10 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-/* Define INDI Data Dir */
+/* CMake substitutes the discovered INDI data directory into generated config.h. */
 #cmakedefine INDI_DATA_DIR "@INDI_DATA_DIR@"
-/* Define Driver version */
+
+/* Keep the runtime DRIVER_INFO version in sync with CMake project metadata. */
 #define CDRIVER_VERSION_MAJOR @CDRIVER_VERSION_MAJOR@
 #define CDRIVER_VERSION_MINOR @CDRIVER_VERSION_MINOR@
 
