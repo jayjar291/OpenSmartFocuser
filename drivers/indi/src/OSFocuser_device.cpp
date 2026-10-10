@@ -58,11 +58,14 @@ void OSFocuser::TimerHit()
 {
     if (!isConnected())
         return;
+    
+
     LOG_DEBUG("Polling focuser status");
     auto response = protocol->sendCommand(":PF#");
     if (auto status = std::get_if<OSF::FocuserStatus>(&response.response)) {
         LOGF_INFO("Focuser status %s position %d", status->status.c_str(), status->position);
-    } // Example status command
+        
+    }
     SetTimer(getCurrentPollingPeriod());
 }
 
@@ -118,10 +121,21 @@ IPState OSFocuser::MoveRelFocuser(FocusDirection dir, uint32_t ticks)
     return IPS_OK;
 }
 
+// Abort focuser movement
 bool OSFocuser::AbortFocuser()
 {
     LOG_INFO("Aborting focuser movement");
-    return true;
+    if (!protocol) {
+        LOG_ERROR("Protocol not initialized");
+        return false;
+    }
+    auto response = protocol->sendCommand(":MH#");
+    if (std::get_if<bool>(&response.response)) {
+        LOG_INFO("Focuser movement aborted successfully");
+        return true;
+    }
+    LOG_ERROR("Failed to abort focuser movement");
+    return false;
 }
 
 IPState OSFocuser::HomeFocuser()

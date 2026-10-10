@@ -93,7 +93,7 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
         } catch (const std::invalid_argument &) {
             return commandResponse;
         }
-    }
+    } else if
     return commandResponse;
 }
 
