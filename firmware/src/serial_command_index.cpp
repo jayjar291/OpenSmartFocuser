@@ -43,7 +43,7 @@ const CommandEntry kCommands[] = {
   {":PR", SerialCommandHandler::handleGetPreset},
   //:PL# list presets, response :PL<presetId>,<name>,<steps># additional presets are added as[;<presetId>,<name>,<steps>]#
   {":PL", SerialCommandHandler::handleListPresets},
-  //:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>,<Steps>#. If steps is -1, current position is used.
+  //:PA<steps>,<presetName># add preset, response :PA<presetId>,<Name>,<Steps>#. If steps is -1, current position is used.
   {":PA", SerialCommandHandler::handleAddPreset},
   //:PS<presetId>,<steps>,<presetName># set preset by id, response :ACK#. If steps is -1, current position is used.
   {":PS", SerialCommandHandler::handleSetPreset},

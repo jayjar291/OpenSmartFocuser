@@ -387,9 +387,9 @@ void handleGetPreset(const char* parameters, size_t parametersLength) {
   gSerial->print(":PR");
   gSerial->print(p.id);
   gSerial->print(",");
-  gSerial->print(p.steps);
-  gSerial->print(",");
   gSerial->print(p.name);
+  gSerial->print(",");
+  gSerial->print(p.steps);
   gSerial->println("#");
 }
 
@@ -406,9 +406,9 @@ void handleListPresets(const char* parameters, size_t parametersLength) {
     }
     gSerial->print(p.id);
     gSerial->print(",");
-    gSerial->print(p.steps);
-    gSerial->print(",");
     gSerial->print(p.name);
+    gSerial->print(",");
+    gSerial->print(p.steps);
     if (i < cap - 1) {
       gSerial->print(";");
     }
@@ -416,7 +416,7 @@ void handleListPresets(const char* parameters, size_t parametersLength) {
   gSerial->println("#");
 }
 
-//:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>,<Steps>#. If steps is -1, current position is used.
+//:PA<steps>,<presetName># add preset, response :PA<presetId>,<Name>,<Steps>#. If steps is -1, current position is used.
 void handleAddPreset(const char* parameters, size_t parametersLength) {
   char payload[kMaxPayloadLength] = {0};
   ParsedArgs args;
