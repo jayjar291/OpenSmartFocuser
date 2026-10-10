@@ -19,8 +19,6 @@ constexpr size_t kMaxPayloadLength = 64;
 constexpr const char* kResponseAck = ":ACK#";
 constexpr const char* kResponseUnknown = ":ER01#";
 constexpr const char* kResponseInvalidArgs = ":ER02#";
-constexpr const char* kResponseBusy = ":ER03#";
-constexpr const char* kResponseHomingRequired = ":ER04#";
 constexpr const char* kResponseAddonUnavalable = ":ER05#";
 constexpr const char* kResponsePositionExceedLimit  = ":ER06#";
 constexpr const char* kResponseError = ":ERR#";
@@ -51,6 +49,15 @@ bool readInt32Arg(const ParsedArgs& args, uint8_t index, int32_t& outValue) {
     return false;
   }
   return PayloadParserFixed::asInt32(args.args[index], outValue);
+}
+
+bool readPresetIdArg(const ParsedArgs& args, uint8_t index, uint8_t& outPresetId) {
+  int32_t presetId = 0;
+  if (!readInt32Arg(args, index, presetId) || presetId < 1 || presetId > preset::capacity()) {
+    return false;
+  }
+  outPresetId = static_cast<uint8_t>(presetId);
+  return true;
 }
 
 bool readFloatArg(const ParsedArgs& args, uint8_t index, float& outValue) {
@@ -176,7 +183,9 @@ void handlePollStatus(const char* parameters, size_t parametersLength) {
 void handleGetFirmwareVersion(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
-  gSerial->println(":TODO#");
+  gSerial->print(":VF");
+  gSerial->print(VERSION);
+  gSerial->println("#");
 }
 
 //:GM# get movement status, response :GM<statusString>#.
@@ -341,13 +350,13 @@ void handleGotoPreset(const char* parameters, size_t parametersLength) {
     return;
   }
 
-  int32_t presetId = 0;
-  if (!readInt32Arg(args, 0, presetId)) {
+  uint8_t presetId = 0;
+  if (!readPresetIdArg(args, 0, presetId)) {
     gSerial->println(kResponseInvalidArgs);
     return;
   }
 
-  if (!preset::gotoById(static_cast<uint8_t>(presetId))) {
+  if (!preset::gotoById(presetId)) {
     gSerial->println(kResponseInvalidArgs);
     return;
   }
@@ -364,14 +373,14 @@ void handleGetPreset(const char* parameters, size_t parametersLength) {
     return;
   }
 
-  int32_t presetId = 0;
-  if (!readInt32Arg(args, 0, presetId)) {
+  uint8_t presetId = 0;
+  if (!readPresetIdArg(args, 0, presetId)) {
     gSerial->println(kResponseInvalidArgs);
     return;
   }
 
   preset::Preset p{};
-  if (!preset::getById(static_cast<uint8_t>(presetId), p)) {
+  if (!preset::getById(presetId, p)) {
     gSerial->println(kResponseInvalidArgs);
     return;
   }
@@ -384,30 +393,30 @@ void handleGetPreset(const char* parameters, size_t parametersLength) {
   gSerial->println("#");
 }
 
-//:PL# list presets, response :PL<presetId>,<name>,<steps># ends with :PL!#
+//:PL# list presets, response :PL<presetId>,<name>,<steps># additional presets are added as[;<presetId>,<name>,<steps>]#
 void handleListPresets(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
   preset::Preset p{};
   const uint8_t cap = preset::capacity();
+  gSerial->print(":PL");
   for (uint8_t i = 0; i < cap; ++i) {
     if (!preset::getByIndex(i, p) || !p.used) {
       continue;
     }
-
-    gSerial->print(":PL");
     gSerial->print(p.id);
     gSerial->print(",");
     gSerial->print(p.steps);
     gSerial->print(",");
     gSerial->print(p.name);
-    gSerial->println("#");
+    if (i < cap - 1) {
+      gSerial->print(";");
+    }
   }
-  
-  gSerial->println(":PL!#");
+  gSerial->println("#");
 }
 
-//:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>#. If steps is -1, current position is used.
+//:PA<steps>,<presetName># add preset, response :PA<presetId>,<presetName>,<Steps>#. If steps is -1, current position is used.
 void handleAddPreset(const char* parameters, size_t parametersLength) {
   char payload[kMaxPayloadLength] = {0};
   ParsedArgs args;
@@ -445,6 +454,8 @@ void handleAddPreset(const char* parameters, size_t parametersLength) {
   gSerial->print(newId);
   gSerial->print(",");
   gSerial->print(name);
+  gSerial->print(",");
+  gSerial->print(steps);
   gSerial->println("#");
 }
 
@@ -457,13 +468,18 @@ void handleRemovePreset(const char* parameters, size_t parametersLength) {
     return;
   }
 
-  int32_t presetId = 0;
-  if (!readInt32Arg(args, 0, presetId)) {
+  uint8_t presetId = 0;
+  if (!readPresetIdArg(args, 0, presetId)) {
     gSerial->println(kResponseInvalidArgs);
     return;
   }
 
-  if (!preset::remove(static_cast<uint8_t>(presetId))) {
+  preset::Preset existingPreset{};
+  if (!preset::getById(presetId, existingPreset)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  if (!preset::remove(presetId)) {
     gSerial->println(kResponseError);
     return;
   }
@@ -479,10 +495,10 @@ void handleSetPreset(const char* parameters, size_t parametersLength) {
     return;
   }
 
-  int32_t presetId = 0;
+  uint8_t presetId = 0;
   int32_t steps = 0;
   const char* parsedName = nullptr;
-  if (!readInt32Arg(args, 0, presetId)) {
+  if (!readPresetIdArg(args, 0, presetId)) {
     gSerial->println(kResponseInvalidArgs);
     return;
   }
@@ -503,7 +519,12 @@ void handleSetPreset(const char* parameters, size_t parametersLength) {
     steps = Movement::getCurrentPositionSteps();
   }
 
-  if (!preset::set(static_cast<uint8_t>(presetId), name, steps)) {
+  preset::Preset existingPreset{};
+  if (!preset::getById(presetId, existingPreset)) {
+    gSerial->println(kResponseInvalidArgs);
+    return;
+  }
+  if (!preset::set(presetId, name, steps)) {
     gSerial->println(kResponseError);
     return;
   }
@@ -660,11 +681,11 @@ void handleReboot(const char* parameters, size_t parametersLength) {
   (void)parametersLength;
   gSerial->println(kResponseAck);
   delay(1000);
-  gSerial->print(":Rebooting.");
+  DebugSerial::printFramed("Rebooting.");
   delay(1000);
-  gSerial->print(".");
+  DebugSerial::printFramed("Rebooting..");
   delay(1000);
-  gSerial->println(".#");
+  DebugSerial::printFramed("Rebooting...");
   delay(250);
   ESP.restart();
 }
@@ -701,30 +722,26 @@ void handleEnableMotor(const char* parameters, size_t parametersLength) {
   Movement::setMotorEnabledState(true);
   gSerial->println(kResponseAck);
 }
-
+//:AQ# Queries add-ons, response :AQ<Type># additional add-ons are added as [,<Type>] example :AQ<Type1>,<Type2># if multiple add-ons are present.
 void handleQueryAddons(const char* parameters, size_t parametersLength) {
   (void)parameters;
   (void)parametersLength;
 
-  uint8_t addonCount = 0;
-  if (Addons::hasAddon(Addons::AddonType::Shutter)) {
-    gSerial->println(":AQShutter#");
-    ++addonCount;
+  gSerial->print(":AQ");
+  if (Addons::hasAddon(Addons::AddonType::None)) {
+    gSerial->print("None");
   }
+  else
+  {
+    if (Addons::hasAddon(Addons::AddonType::Shutter)) {
+      gSerial->print("Shutter");
+    }
 
-  if (Addons::hasAddon(Addons::AddonType::FlatPanel)) {
-    gSerial->println(":AQFlatPanel#");
-    ++addonCount;
+    if (Addons::hasAddon(Addons::AddonType::FlatPanel)) {
+      gSerial->print(",FlatPanel");
+    }
   }
-
-  if (addonCount == 0) {
-    gSerial->println(":AQNONE#");
-    return;
-  }
-
-  if (addonCount > 1) {
-    gSerial->println(":AQ!#");
-  }
+  gSerial->println("#");
 }
 
 void handleSetFlatPanelBrightness(const char* parameters, size_t parametersLength) {
