@@ -79,10 +79,16 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
     const std::string token = commandFrame.substr(0, 2);
     const std::string payload = commandFrame.substr(2);
 
+    // Handle ER response token
+    if (token == "ER") {
+        commandResponse.response = token + payload;
+        return commandResponse;
+    }
     // Handle PF response token
-    if (token == "PF") {
+    else if (token == "PF") {
         try {
             commandResponse.response = parseFocuserStatus(payload);
+            return commandResponse;
         } catch (const std::invalid_argument &) {
             return commandResponse;
         }
@@ -91,6 +97,7 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
     else if (token == "GL") {
         try {
             commandResponse.response = parseStepLimits(payload);
+            return commandResponse;
         } catch (const std::invalid_argument &) {
             return commandResponse;
         }
@@ -99,6 +106,7 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
     else if (token == "TG") {
         try {
             commandResponse.response = parseTargetCoords(payload);
+            return commandResponse;
         } catch (const std::invalid_argument &) {
             return commandResponse;
         }
@@ -107,6 +115,7 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
     else if (token == "PL") {
         try {
             commandResponse.response = parsePresetList(payload);
+            return commandResponse;
         } catch (const std::invalid_argument &) {
             return commandResponse;
         }
@@ -115,6 +124,7 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
     else if (token == "PA" || token == "PR") {
         try {
             commandResponse.response = parsePreset(payload);
+            return commandResponse;
         } catch (const std::invalid_argument &) {
             return commandResponse;
         }
@@ -123,6 +133,7 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
     else if (token == "AQ") {
         try {
             commandResponse.response = parseAddonList(payload);
+            return commandResponse;
         } catch (const std::invalid_argument &) {
             return commandResponse;
         }
@@ -148,12 +159,13 @@ OSF::CommandResponse OSFprotocol::sendCommand(const std::string &cmd)
         try
         {
             commandResponse.response = parseInt32(payload);
+            return commandResponse;
         }
         catch(const std::invalid_argument &)
         {
             return commandResponse;
         }
-    } 
+    }
     commandResponse.response = payload;
     return commandResponse;
 }
