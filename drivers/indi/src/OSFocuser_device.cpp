@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <vector>
 #include "OSFocuser_device.h"
+#include "dustcap_device.h"
+#include "flat_device.h"
 #include "libindi/indicom.h"
 #include <connectionplugins/connectionserial.h>
 #include "config.h"
@@ -20,6 +22,8 @@ OSFocuser::OSFocuser()
     setVersion(CDRIVER_VERSION_MAJOR, CDRIVER_VERSION_MINOR);
     setSupportedConnections(CONNECTION_SERIAL);
     SetCapability(FOCUSER_CAN_ABORT | FOCUSER_CAN_ABS_MOVE | FOCUSER_CAN_REL_MOVE | FOCUSER_HAS_VARIABLE_SPEED);
+    setDriverInterface(INDI::BaseDevice::FOCUSER_INTERFACE);
+    syncDriverInfo();
 
     // Configure the serial transport; its handshake callback creates the
     // protocol object and validates the attached focuser before connecting.
@@ -28,8 +32,9 @@ OSFocuser::OSFocuser()
     serialConnection->setDefaultPort("/dev/OSF");
     serialConnection->registerHandshake([&]() {return Handshake();});
     registerConnection(serialConnection);
-    
 }
+
+OSFocuser::~OSFocuser() = default;
 
 const char *OSFocuser::getDefaultName()
 {
@@ -40,6 +45,9 @@ void OSFocuser::ISGetProperties(const char *dev)
 {
     // Let the base class publish standard focuser and connection properties.
     INDI::Focuser::ISGetProperties(dev);
+
+    if (flatDevice)
+        flatDevice->ISGetProperties(dev);
 
     // Custom controls only exist while the hardware connection is active.
     if (isConnected()) {
@@ -69,10 +77,10 @@ bool OSFocuser::updateProperties()
             timerID = SetTimer(getCurrentPollingPeriod());
         
         //
-        if (hasDustCap && dustCapInterfaceInitialized)
-            INDI::DustCapInterface::updateProperties();
-        if (hasLightbox && lightboxInterfaceInitialized)
-            INDI::LightboxInterface::updateProperties();
+        if (dustCapDevice)
+            dustCapDevice->updateProperties();
+        if (flatDevice)
+            flatDevice->updateProperties();
 
     } else {
         // Remove connection-only controls and discard pending operation state.
@@ -87,10 +95,10 @@ bool OSFocuser::updateProperties()
             timerID = -1;
         }
 
-        if (dustCapInterfaceInitialized)
-            INDI::DustCapInterface::updateProperties();
-        if (lightboxInterfaceInitialized)
-            INDI::LightboxInterface::updateProperties();
+        if (dustCapDevice)
+            dustCapDevice->updateProperties();
+        if (flatDevice)
+            flatDevice->updateProperties();
     }
     return true;
 }
@@ -101,17 +109,6 @@ bool OSFocuser::initProperties()
     // controls; failure here means the device cannot be initialized.
     if (!INDI::Focuser::initProperties())
         return false;
-
-    if (hasDustCap && !dustCapInterfaceInitialized)
-    {
-        INDI::DustCapInterface::initProperties();
-        dustCapInterfaceInitialized = true;
-    }
-    if (hasLightbox && !lightboxInterfaceInitialized)
-    {
-        INDI::LightboxInterface::initProperties();
-        lightboxInterfaceInitialized = true;
-    }
 
     // Each custom action is a one-member, momentary switch in the System tab.
     HomeSP.fill(getDeviceName(), "FOCUS_HOME", "Home", "System", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
@@ -130,12 +127,11 @@ bool OSFocuser::ISNewSwitch(const char *dev, const char *name, ISState *states, 
     if (!dev || std::strcmp(dev, getDeviceName()) != 0 || !name)
         return INDI::Focuser::ISNewSwitch(dev, name, states, names, n);
 
-    if (hasDustCap && dustCapInterfaceInitialized &&
-        INDI::DustCapInterface::processSwitch(dev, name, states, names, n))
+    if (dustCapDevice && dustCapDevice->processSwitch(dev, name, states, names, n))
+        return true;
 
-
-    if (hasLightbox && lightboxInterfaceInitialized &&
-        INDI::LightboxInterface::processSwitch(dev, name, states, names, n))
+    if (flatDevice && flatDevice->processSwitch(dev, name, states, names, n))
+        return true;
 
 
     // Resolve a property request into the switch to acknowledge and its
@@ -215,23 +211,22 @@ bool OSFocuser::ISNewSwitch(const char *dev, const char *name, ISState *states, 
     return true;
 }
 
-bool OSFocuser::ISNewNumber(const char *dev, const char *name, double value)
+bool OSFocuser::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
 {
-    if (hasDustCap && dustCapInterfaceInitialized &&
-        INDI::DustCapInterface::ISNewNumber(dev, name, value))
+    if (flatDevice && flatDevice->processNumber(dev, name, values, names, n))
         return true;
 
-    if (hasLightbox && lightboxInterfaceInitialized &&
-        INDI::LightboxInterface::ISNewNumber(dev, name, value))
-        return true;
-
-    if (hasLightBox && lightBoxInterfaceInitialized &&
-        INDI::LightBoxInterface::processNumber(dev, name, values, names, n))
-        return true;
-
-    return false;
+    return INDI::Focuser::ISNewNumber(dev, name, values, names, n);
 }
 
+bool OSFocuser::ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n)
+{
+    if (flatDevice && dev && std::strcmp(dev, getDeviceName()) == 0 &&
+        flatDevice->processText(dev, name, texts, names, n))
+        return true;
+
+    return INDI::Focuser::ISNewText(dev, name, texts, names, n);
+}
 
 void OSFocuser::TimerHit()
 {
@@ -249,7 +244,7 @@ void OSFocuser::TimerHit()
 
     // The typed status response contains movement state and the encoder count.
     if (auto status = std::get_if<OSF::FocuserStatus>(&response.response)) {
-        LOGF_INFO("Focuser status %s position %d", status->status.c_str(), status->position);
+        LOGF_DEBUG("Focuser status %s position %d", status->status.c_str(), status->position);
 
         IPState propertyState = IPS_ALERT;
         // Firmware currently emits title-case words; uppercase aliases are
@@ -281,6 +276,11 @@ void OSFocuser::TimerHit()
             FocusRelPosNP.apply();
         }
 
+        if (dustCapDevice)
+            dustCapDevice->updateStatus(status->dustCapPosition);
+        if (flatDevice)
+            flatDevice->updateStatus(status->brightness);
+
         // Home is asynchronous: keep its switch busy through motion, then
         // publish the first verified idle or error state.
         if (homePending && propertyState != IPS_BUSY) {
@@ -301,6 +301,8 @@ void OSFocuser::TimerHit()
             HomeSP.setState(IPS_ALERT);
             HomeSP.apply();
         }
+        if (dustCapDevice)
+            dustCapDevice->statusUnavailable();
     }
 
     // Keep status updates periodic; SetTimer schedules a one-shot callback.
@@ -372,16 +374,48 @@ bool OSFocuser::Handshake()
     // Query available add-ons and set flags accordingly.
     const auto addonResponse = protocol->sendCommand(":AQ#");
     hasDustCap = false;
-    hasLightbox = false;
+    hasLightBox = false;
     if (const auto *addons = std::get_if<std::vector<std::string>>(&addonResponse.response)) {
         for (const auto &addon : *addons) {
             if (addon == "Shutter") {
                 hasDustCap = true;
             } else if (addon == "FlatPanel") {
-                hasLightbox = true;
+                hasLightBox = true;
             }
         }
     }
+
+    // Create and initialize only the add-on adapters reported by this focuser.
+    if (hasDustCap) {
+        if (!dustCapDevice) {
+            dustCapDevice = std::make_unique<DustCapDevice>(this, protocol);
+            dustCapDevice->initProperties();
+        } else {
+            dustCapDevice->setProtocol(protocol);
+        }
+    } else {
+        dustCapDevice.reset();
+    }
+    if (hasLightBox) {
+        if (!flatDevice) {
+            flatDevice = std::make_unique<FlatDevice>(this, protocol);
+            flatDevice->initProperties();
+        } else {
+            flatDevice->setProtocol(protocol);
+        }
+    } else {
+        flatDevice.reset();
+    }
+
+    uint32_t interfaces = INDI::BaseDevice::FOCUSER_INTERFACE;
+    if (dustCapDevice)
+        interfaces |= INDI::BaseDevice::DUSTCAP_INTERFACE;
+    if (flatDevice)
+        interfaces |= INDI::BaseDevice::LIGHTBOX_INTERFACE;
+    if (dustCapDevice || flatDevice)
+        interfaces |= INDI::BaseDevice::AUX_INTERFACE;
+    setDriverInterface(interfaces);
+    syncDriverInfo();
 
     // Convert the validated firmware limits into INDI's numeric property
     // representation and derive the relative travel span.
@@ -545,30 +579,3 @@ IPState OSFocuser::HomeFocuser()
     return IPS_OK;
 }
 
-IPState OSFocuser::ParkCap()
-{
-    auto r = protocol ? protocol->sendCommand(":SV0#") : OSF::CommandResponse{false,{}};
-    const auto *ok = std::get_if<bool>(&r.response);
-    return (ok && *ok) ? IPS_BUSY : IPS_ALERT; // busy until PF reports idle
-}
-
-IPState OSFocuser::UnParkCap()
-{
-    auto r = protocol ? protocol->sendCommand(":SV270#") : OSF::CommandResponse{false,{}};
-    const auto *ok = std::get_if<bool>(&r.response);
-    return (ok && *ok) ? IPS_BUSY : IPS_ALERT;
-}
-
-bool OSFocuser::EnableLightBox(bool enable)
-{
-    auto r = protocol ? protocol->sendCommand(enable ? ":FP255#" : ":FP0#") : OSF::CommandResponse{false,{}};
-    const auto *ok = std::get_if<bool>(&r.response);
-    return (ok && *ok);
-}
-
-bool OSFocuser::SetLightBoxBrightness(uint16_t value)
-{
-    auto r = protocol ? protocol->sendCommand(":FP" + std::to_string(value) + "#") : OSF::CommandResponse{false,{}};
-    const auto *ok = std::get_if<bool>(&r.response);
-    return (ok && *ok);
-}

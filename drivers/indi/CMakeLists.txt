@@ -29,10 +29,12 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${INDI_INCLUDE_DIR})
 
-# The live driver is split between INDI lifecycle/commands and serial framing.
-# Empty add-on and star-map placeholders are intentionally not linked here.
+# Keep the focuser lifecycle, add-on interfaces, and serial framing in separate
+# translation units while linking them into one INDI driver executable.
 add_executable(indi_opensmartfocuser
   src/OSFocuser_device.cpp
+  src/dustcap_device.cpp
+  src/flat_device.cpp
   src/protocol.cpp
 )
 
