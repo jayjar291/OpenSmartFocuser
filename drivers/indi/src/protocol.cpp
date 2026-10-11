@@ -240,23 +240,58 @@ bool OSFprotocol::splitResponseFrames(const std::string &rawResponse, std::strin
 // are reserved for optional add-on telemetry and are ignored here.
 OSF::FocuserStatus OSFprotocol::parseFocuserStatus(const std::string &commandFrame) const
 {
-    const size_t separator = commandFrame.find(',');
-    if (separator == std::string::npos || separator == 0) {
-        // Both a status label and the separator before position are required.
+    // expected: status,position[,dustCap][,brightness]
+    const size_t s1 = commandFrame.find(',');
+    if (s1 == std::string::npos || s1 == 0)
         throw std::invalid_argument("Invalid focuser status frame");
-    }
 
-    const size_t additionalFields = commandFrame.find(',', separator + 1);
-    const char *positionBegin = commandFrame.data() + separator + 1;
-    const char *positionEnd = commandFrame.data() + (additionalFields == std::string::npos ? commandFrame.size() : additionalFields);
-    int32_t position;
-    const auto result = std::from_chars(positionBegin, positionEnd, position);
-    if (result.ec != std::errc{} || result.ptr != positionEnd) {
-        // from_chars must consume exactly the first numeric field.
+    const size_t s2 = commandFrame.find(',', s1 + 1);
+    const std::string status = commandFrame.substr(0, s1);
+
+    // position
+    const char *pBegin = commandFrame.data() + s1 + 1;
+    const char *pEnd   = commandFrame.data() + (s2 == std::string::npos ? commandFrame.size() : s2);
+    int32_t position {};
+    auto pRes = std::from_chars(pBegin, pEnd, position);
+    if (pRes.ec != std::errc{} || pRes.ptr != pEnd)
         throw std::invalid_argument("Invalid focuser position");
+
+    std::optional<int16_t> cap;
+    std::optional<int16_t> bright;
+
+    if (s2 != std::string::npos)
+    {
+        const size_t s3 = commandFrame.find(',', s2 + 1);
+
+        // dustCap field
+        {
+            const char *cBegin = commandFrame.data() + s2 + 1;
+            const char *cEnd   = commandFrame.data() + (s3 == std::string::npos ? commandFrame.size() : s3);
+            if (cBegin < cEnd)
+            {
+                int32_t tmp {};
+                auto cRes = std::from_chars(cBegin, cEnd, tmp);
+                if (cRes.ec == std::errc{} && cRes.ptr == cEnd)
+                    cap = static_cast<int16_t>(tmp);
+            }
+        }
+
+        // brightness field
+        if (s3 != std::string::npos)
+        {
+            const char *bBegin = commandFrame.data() + s3 + 1;
+            const char *bEnd   = commandFrame.data() + commandFrame.size();
+            if (bBegin < bEnd)
+            {
+                int32_t tmp {};
+                auto bRes = std::from_chars(bBegin, bEnd, tmp);
+                if (bRes.ec == std::errc{} && bRes.ptr == bEnd)
+                    bright = static_cast<int16_t>(tmp);
+            }
+        }
     }
 
-    return {commandFrame.substr(0, separator), position};
+    return {status, position, cap, bright};
 }
 // Parse :GL's minimum and maximum step bounds as two complete int32 fields.
 OSF::StepLimits OSFprotocol::parseStepLimits(const std::string &commandFrame) const

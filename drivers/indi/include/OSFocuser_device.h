@@ -31,6 +31,10 @@ class OSFocuser : public INDI::Focuser,
         virtual void ISGetProperties(const char *dev) override;
         // Route custom System-tab buttons before delegating normal switches.
         virtual bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n) override;
+        // Route custom Number-tab inputs before delegating normal numbers.
+        virtual bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
+        // Persist custom configuration items to the INDI configuration file.
+        virtual bool saveConfigItems(FILE *fp) override;
         // One-shot event-loop callback that polls :PF and updates INDI states.
         virtual void TimerHit() override;
     private:
@@ -46,6 +50,11 @@ class OSFocuser : public INDI::Focuser,
         bool homePending = false;
         // ID of the outstanding one-shot TimerHit callback; -1 means none.
         int timerID = -1;
+        // Flags for optional DustCap and LightBox interfaces.
+        bool hasDustCap = false;
+        bool hasLightBox = false;
+        bool dustCapInterfaceInitialized = false;
+        bool lightBoxInterfaceInitialized = false;
 
     protected:
         // Establish transport and query the initial focuser configuration.
@@ -60,5 +69,11 @@ class OSFocuser : public INDI::Focuser,
         virtual bool AbortFocuser();
         // Apply INDI's selected discrete speed through firmware command :MS.
         virtual bool SetFocuserSpeed(int speed) override;
-        
-};
+        // DustCapInterface hooks
+        virtual IPState ParkCap() override;    // close
+        virtual IPState UnParkCap() override;  // open
+
+        // LightBoxInterface hooks
+        virtual bool EnableLightBox(bool enable) override;
+        virtual bool SetLightBoxBrightness(uint16_t value) override;
+    };

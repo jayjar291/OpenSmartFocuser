@@ -2,6 +2,7 @@
 #include <variant>
 #include <cstdint>
 #include <vector>
+#include <optional>
 
 namespace OSF {
 
@@ -32,8 +33,9 @@ struct Preset {
 struct FocuserStatus {
     std::string status;
     int32_t position;
-    //int16_t dustCapPosition = -1;  // -1 if unused
-    //int16_t brightness = -1;       // -1 if unused
+    // Optional add-on fields reported by the firmware
+    std::optional<int16_t> dustCapPosition;  // -1 if unused
+    std::optional<int16_t> brightness;       // -1 if unused
 };
 
 // Exactly one response shape is active at a time. bool represents ACK/NAK,
