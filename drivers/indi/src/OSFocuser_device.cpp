@@ -56,6 +56,8 @@ bool OSFocuser::updateProperties()
     if (!INDI::Focuser::updateProperties())
         return false;
 
+
+    
     // Publish custom controls and start polling after connection succeeds.
     if (isConnected()) {
         defineProperty(HomeSP);
@@ -65,6 +67,13 @@ bool OSFocuser::updateProperties()
         // timerID prevents reconnect callbacks from creating duplicate polls.
         if (timerID < 0)
             timerID = SetTimer(getCurrentPollingPeriod());
+        
+        //
+        if (hasDustCap && dustCapInterfaceInitialized)
+            INDI::DustCapInterface::updateProperties();
+        if (hasLightbox && lightboxInterfaceInitialized)
+            INDI::LightboxInterface::updateProperties();
+
     } else {
         // Remove connection-only controls and discard pending operation state.
         deleteProperty(HomeSP);
@@ -77,6 +86,11 @@ bool OSFocuser::updateProperties()
             RemoveTimer(timerID);
             timerID = -1;
         }
+
+        if (dustCapInterfaceInitialized)
+            INDI::DustCapInterface::updateProperties();
+        if (lightboxInterfaceInitialized)
+            INDI::LightboxInterface::updateProperties();
     }
     return true;
 }
@@ -87,6 +101,17 @@ bool OSFocuser::initProperties()
     // controls; failure here means the device cannot be initialized.
     if (!INDI::Focuser::initProperties())
         return false;
+
+    if (hasDustCap && !dustCapInterfaceInitialized)
+    {
+        INDI::DustCapInterface::initProperties();
+        dustCapInterfaceInitialized = true;
+    }
+    if (hasLightbox && !lightboxInterfaceInitialized)
+    {
+        INDI::LightboxInterface::initProperties();
+        lightboxInterfaceInitialized = true;
+    }
 
     // Each custom action is a one-member, momentary switch in the System tab.
     HomeSP.fill(getDeviceName(), "FOCUS_HOME", "Home", "System", IP_RW, ISR_ATMOST1, 0, IPS_IDLE);
@@ -104,6 +129,14 @@ bool OSFocuser::ISNewSwitch(const char *dev, const char *name, ISState *states, 
     // normal dispatcher, not these custom action vectors.
     if (!dev || std::strcmp(dev, getDeviceName()) != 0 || !name)
         return INDI::Focuser::ISNewSwitch(dev, name, states, names, n);
+
+    if (hasDustCap && dustCapInterfaceInitialized &&
+        INDI::DustCapInterface::processSwitch(dev, name, states, names, n))
+
+
+    if (hasLightbox && lightboxInterfaceInitialized &&
+        INDI::LightboxInterface::processSwitch(dev, name, states, names, n))
+
 
     // Resolve a property request into the switch to acknowledge and its
     // corresponding hardware command, if it is not handled by a method.
@@ -181,6 +214,24 @@ bool OSFocuser::ISNewSwitch(const char *dev, const char *name, ISState *states, 
     actionProperty->apply();
     return true;
 }
+
+bool OSFocuser::ISNewNumber(const char *dev, const char *name, double value)
+{
+    if (hasDustCap && dustCapInterfaceInitialized &&
+        INDI::DustCapInterface::ISNewNumber(dev, name, value))
+        return true;
+
+    if (hasLightbox && lightboxInterfaceInitialized &&
+        INDI::LightboxInterface::ISNewNumber(dev, name, value))
+        return true;
+
+    if (hasLightBox && lightBoxInterfaceInitialized &&
+        INDI::LightBoxInterface::processNumber(dev, name, values, names, n))
+        return true;
+
+    return false;
+}
+
 
 void OSFocuser::TimerHit()
 {
@@ -316,6 +367,20 @@ bool OSFocuser::Handshake()
     if (!currentSpeed || *currentSpeed < 0 || *currentSpeed > 4) {
         LOG_ERROR("Failed to query a valid focuser speed");
         return false;
+    }
+
+    // Query available add-ons and set flags accordingly.
+    const auto addonResponse = protocol->sendCommand(":AQ#");
+    hasDustCap = false;
+    hasLightbox = false;
+    if (const auto *addons = std::get_if<std::vector<std::string>>(&addonResponse.response)) {
+        for (const auto &addon : *addons) {
+            if (addon == "Shutter") {
+                hasDustCap = true;
+            } else if (addon == "FlatPanel") {
+                hasLightbox = true;
+            }
+        }
     }
 
     // Convert the validated firmware limits into INDI's numeric property
@@ -478,4 +543,32 @@ IPState OSFocuser::HomeFocuser()
         return IPS_ALERT;
     }
     return IPS_OK;
+}
+
+IPState OSFocuser::ParkCap()
+{
+    auto r = protocol ? protocol->sendCommand(":SV0#") : OSF::CommandResponse{false,{}};
+    const auto *ok = std::get_if<bool>(&r.response);
+    return (ok && *ok) ? IPS_BUSY : IPS_ALERT; // busy until PF reports idle
+}
+
+IPState OSFocuser::UnParkCap()
+{
+    auto r = protocol ? protocol->sendCommand(":SV270#") : OSF::CommandResponse{false,{}};
+    const auto *ok = std::get_if<bool>(&r.response);
+    return (ok && *ok) ? IPS_BUSY : IPS_ALERT;
+}
+
+bool OSFocuser::EnableLightBox(bool enable)
+{
+    auto r = protocol ? protocol->sendCommand(enable ? ":FP255#" : ":FP0#") : OSF::CommandResponse{false,{}};
+    const auto *ok = std::get_if<bool>(&r.response);
+    return (ok && *ok);
+}
+
+bool OSFocuser::SetLightBoxBrightness(uint16_t value)
+{
+    auto r = protocol ? protocol->sendCommand(":FP" + std::to_string(value) + "#") : OSF::CommandResponse{false,{}};
+    const auto *ok = std::get_if<bool>(&r.response);
+    return (ok && *ok);
 }

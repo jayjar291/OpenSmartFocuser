@@ -33,8 +33,6 @@ class OSFocuser : public INDI::Focuser,
         virtual bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n) override;
         // Route custom Number-tab inputs before delegating normal numbers.
         virtual bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
-        // Persist custom configuration items to the INDI configuration file.
-        virtual bool saveConfigItems(FILE *fp) override;
         // One-shot event-loop callback that polls :PF and updates INDI states.
         virtual void TimerHit() override;
     private:
