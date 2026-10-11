@@ -17,8 +17,10 @@ void initializeAddons();
 void detachServos();
 
 void setFlatPanelBrightness(uint8_t brightness);
+uint8_t getFlatPanelBrightness();
 
 void setShutterPosition(uint16_t position);
+uint16_t getShutterPosition();
 
 void toggleFlatPanel();
 void toggleShutter();

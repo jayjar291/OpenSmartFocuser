@@ -187,6 +187,12 @@ void setFlatPanelBrightness(uint8_t brightness) {
   applyFlatPanelBrightness(brightness);
 }
 
+uint8_t getFlatPanelBrightness() {
+  if (!HAS_FLAT_FRAME_PANEL || !gAddonsInitialized) {
+    return 0;
+  }
+  return ledcRead(kFlatPanelPwmChannel);
+}
 void setShutterPosition(uint16_t position) {
   if (!HAS_SHUTTER || !gAddonsInitialized) {
     return;
@@ -194,6 +200,13 @@ void setShutterPosition(uint16_t position) {
 
   startShutterMove(position);
   DebugSerial::printFramedValue("setShutterPosition: target ", clampShutterPosition(position), "");
+}
+
+uint16_t getShutterPosition() {
+  if (!HAS_SHUTTER || !gAddonsInitialized) {
+    return 0;
+  }
+  return gShutterTargetPosition;
 }
 
 void detachServos() {

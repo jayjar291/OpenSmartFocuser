@@ -168,14 +168,14 @@ void handlePollStatus(const char* parameters, size_t parametersLength) {
   gSerial->print(",");
   gSerial->print(Movement::getCurrentPositionSteps());
   // Add additional fields for add-ons here if present.
-  //if (Addons::hasAddon(Addons::AddOnType::DustCap)) {
-  //  gSerial->print(",");
-  //  gSerial->print(Addons::getDustCapPosition());
-  //}
-  //if (Addons::hasAddon(Addons::AddOnType::Lightbox)) {
-  //  gSerial->print(",");
-  //  gSerial->print(Addons::getLightboxBrightness());
-  //}
+  if (Addons::hasAddon(Addons::AddonType::Shutter)) {
+    gSerial->print(",");
+    gSerial->print(Addons::getShutterPosition());
+  }
+  if (Addons::hasAddon(Addons::AddonType::FlatPanel)) {
+    gSerial->print(",");
+    gSerial->print(Addons::getFlatPanelBrightness());
+  }
   gSerial->println("#");
 }
 
